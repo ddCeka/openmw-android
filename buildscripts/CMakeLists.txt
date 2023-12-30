@@ -33,11 +33,11 @@ set(BULLET_VERSION 3.17)
 set(BULLET_HASH SHA256=baa642c906576d4d98d041d0acb80d85dd6eff6e3c16a009b1abf1ccd2bc0a61)
 
 # https://github.com/MyGUI/mygui/releases
-set(MYGUI_VERSION 3.4.1)
+set(MYGUI_VERSION 3.4.3)
 set(MYGUI_HASH SHA256=d1d5f294670ae71f7200ed4b30859018281d8cfd45d6a38d18b97a4aba604c42)
 
 # https://github.com/sisah2/gl4es/releases
-set(GL4ES_VERSION f051976b79cbbf7180e0e999d8b748a18dc0c009)
+set(GL4ES_VERSION 5ac069d82ad8ca2cc3c574484e4c5bad880db83e)
 set(GL4ES_HASH SHA256=b565e717c7d192e936bda25f3cb90ad8db398af56414ec08294b6716574c1a6d)
 
 # https://github.com/openscenegraph/OpenSceneGraph/releases
@@ -56,7 +56,7 @@ set(LIBICU_VERSION 70-1)
 set(LIBICU_HASH SHA256=4013d7aff8a34bae410664bdb16554d7eda03654b22627b9284ab55a685492d4)
 
 # https://github.com/OpenMW/openmw/commits/master
-set(OPENMW_VERSION e8da8aba74cbdeb6159412fd4c19d3f797b494dc)
+set(OPENMW_VERSION 4487113d402981984af03ef96e83153620b69696)
 set(OPENMW_HASH SHA256=44d044ad0a5546216fe611fe92c37065bb07e2efeeeaac4f049dae03df313186)
 
 # End of configurable options
@@ -218,11 +218,10 @@ ExternalProject_Add(openal
 	INSTALL_COMMAND ${wrapper_command} $(MAKE) install
 )
 
-string(REPLACE "." "_" BOOST_VERSION_UNDERSCORE ${BOOST_VERSION})
 ExternalProject_Add(boost
 	URL https://dl.bintray.com/boostorg/release/${BOOST_VERSION}/source/boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2
-	https://github.com/xyzz/openmw-deps/releases/download/v0/boost_${BOOST_VERSION_UNDERSCORE}.tar.bz2
-	URL_HASH ${BOOST_HASH}
+	https://boostorg.jfrog.io/artifactory/main/release/1.83.0/source/boost_1_83_0.tar.bz2
+	#URL_HASH ${BOOST_HASH}
 	DOWNLOAD_DIR ${download_dir}
 
 	BUILD_IN_SOURCE 1
@@ -240,7 +239,7 @@ ExternalProject_Add(boost
 	--with-iostreams
 	--with-regex
 	--ignore-site-config
-	toolset=clang-android
+	toolset=clang
 	architecture=${BOOST_ARCH}
 	address-model=${BOOST_ADDRESS_MODEL}
 	cflags=$ENV{CFLAGS}
@@ -256,6 +255,7 @@ ExternalProject_Add(boost
 	COMMAND llvm-ranlib ${prefix}/lib/libboost_program_options.a
 	COMMAND llvm-ranlib ${prefix}/lib/libboost_system.a
 	COMMAND llvm-ranlib ${prefix}/lib/libboost_iostreams.a
+	COMMAND llvm-ranlib ${prefix}/lib/libboost_regex.a
 )
 
 ExternalProject_Add(ffmpeg
@@ -374,10 +374,12 @@ ExternalProject_Add(mygui
 
 	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
 	${COMMON_CMAKE_ARGS}
-	-DMYGUI_RENDERSYSTEM=4
+	-DMYGUI_RENDERSYSTEM=1
 	-DMYGUI_BUILD_DEMOS=OFF
 	-DMYGUI_BUILD_TOOLS=OFF
 	-DMYGUI_BUILD_PLUGINS=OFF
+	-DMYGUI_BUILD_TOOLS=OFF
+	-DMYGUI_DONT_USE_OBSOLETE=ON
 	-DFREETYPE_FT2BUILD_INCLUDE_DIR=${prefix}/include/freetype2/
 
 	-DMYGUI_STATIC=ON
@@ -486,7 +488,8 @@ ExternalProject_Add(libcollada
 	-DBoost_INCLUDE_DIR=${prefix}/include
 	-DHAVE_STRTOQ=0
 	-DUSE_FILE32API=1
-
+	-DCMAKE_CXX_FLAGS=-std=gnu++11\ -I${prefix}/include/\ $ENV{CXXFLAGS}
+ 
 	BUILD_COMMAND ${wrapper_command} $(MAKE)
 
 	INSTALL_COMMAND ${wrapper_command} $(MAKE) install
@@ -524,6 +527,9 @@ set(OSG_COMMON
 	-DBUILD_OSG_APPLICATIONS=OFF
 	-DBUILD_OSG_PLUGINS_BY_DEFAULT=OFF
 	-DBUILD_OSG_DEPRECATED_SERIALIZERS=OFF
+	#-DOPENGL_opengl_LIBRARY=${prefix}/lib/libGL.so
+	#-DOPENGL_glx_LIBRARY=${prefix}/lib/libGL.so
+	#-DOPENGL_INCLUDE_DIR=${prefix}/include/gl4es/
 )
 
 set(OSG_PATCH
@@ -552,6 +558,7 @@ ExternalProject_Add(osg
 	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
 	${COMMON_CMAKE_ARGS}
 	${OSG_COMMON}
+	-DCMAKE_CXX_FLAGS=-std=gnu++11\ -I${prefix}/include/\ $ENV{CXXFLAGS}
 
 	BUILD_COMMAND ${wrapper_command} $(MAKE)
 
@@ -590,7 +597,7 @@ set(OPENMW_COMMON
 set(OPENMW_PATCH
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/0001-loadingscreen-disable-for-now.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/0009-windowmanagerimp-always-show-mouse-when-possible-pat.patch &&
-        #patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/0010-android-fix-context-being-lost-on-app-minimize.patch &&
+        patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/0010-android-fix-context-being-lost-on-app-minimize.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/fix-build.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/psa.patch &&
 	cp ${CMAKE_SOURCE_DIR}/patches/openmw/android_main.cpp <SOURCE_DIR>/apps/openmw/android_main.cpp
@@ -608,7 +615,6 @@ ExternalProject_Add(openmw
 	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
 	${COMMON_CMAKE_ARGS}
 	${OPENMW_COMMON}
-
 	BUILD_COMMAND $(MAKE)
 
 	INSTALL_COMMAND ""
