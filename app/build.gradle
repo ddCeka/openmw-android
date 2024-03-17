@@ -78,6 +78,12 @@ android {
             outputFileName = "omw_${variant.buildType.name}_${defaultConfig.versionName}.apk"
         }
     }
+
+    signingConfigs {
+        debug {
+            storeFile file("debug.keystore")
+        }
+    }
 }
 
 dependencies {
