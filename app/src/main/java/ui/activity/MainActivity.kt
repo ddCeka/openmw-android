@@ -322,7 +322,6 @@ class MainActivity : AppCompatActivity() {
 
             // write everything to openmw.cfg
             File(Constants.OPENMW_CFG).writeText(output)
-            File("/storage/emulated/0/omw_nightly/config/modlist.cfg").writeText(output)
         } catch (e: IOException) {
             Log.e(TAG, "Failed to generate openmw.cfg.", e)
         }
@@ -422,6 +421,145 @@ class MainActivity : AppCompatActivity() {
         File(Constants.DEFAULTS_BIN).writeText(encoded)
     }
 
+    private fun writeSetting(category: String, name: String, value: String) {
+        var lineList = mutableListOf<String>()
+        var lineNumber = 0
+        var categoryFound = 0
+        var categoryLine = 0
+        var nameFound = 0
+        var nameLine = 0
+        var currentCategory = ""
+
+        File(Constants.USER_CONFIG + "/settings.cfg").useLines {
+	    lines -> lines.forEach {
+		lineList.add(it)
+                if (it.contains("[") && it.contains("]")) currentCategory = it.replace("[", "").replace("]", "").replace(" ", "")
+                if (currentCategory == category.replace(" ", "") && categoryFound == 0 ) { categoryLine = lineNumber; categoryFound = 1 } 
+                if (currentCategory == category.replace(" ", "") && it.substringBefore("=").replace(" ", "") == name.replace(" ", ""))
+		    { nameLine = lineNumber; nameFound = 1 }
+
+                lineNumber++
+	    }
+	}
+
+        if(nameFound == 1)
+            lineList.set(nameLine, name + " = " + value)
+        if(categoryFound == 1 && nameFound == 0)
+            lineList.add(categoryLine + 1, name + " = " + value)
+        if(categoryFound == 0 && nameFound == 0) 
+            lineList.add(lineNumber, "\n" + "[" + category + "]" + "\n" + name + " = " + value)
+
+        var output = ""
+        lineList.forEach { output += it + "\n" }
+
+        File(Constants.USER_CONFIG + "/settings.cfg").writeText(output)
+    }
+
+
+    private fun writeUserSettings() {
+        File(Constants.USER_CONFIG + "/settings.cfg").createNewFile()
+
+	// Write resolution to prevent issues if incorect one is set, probably need to account notch size too
+	val dm = DisplayMetrics()
+	windowManager.defaultDisplay.getRealMetrics(dm)
+
+	val orientation = this.getResources().getConfiguration().orientation
+	var displayWidth = 0
+	var displayHeight = 0
+
+	if (orientation == Configuration.ORIENTATION_PORTRAIT)
+	{
+		displayWidth = if(resolutionX == 0) dm.heightPixels else resolutionX
+		displayHeight = if(resolutionY == 0) dm.widthPixels else resolutionY
+	}
+	else
+	{
+		displayWidth = if(resolutionX == 0) dm.widthPixels else resolutionX
+		displayHeight = if(resolutionY == 0) dm.heightPixels else resolutionY
+	}
+
+	writeSetting("Video", "resolution x", displayWidth.toString())
+	writeSetting("Video", "resolution y", displayHeight.toString())
+
+	// Game Mechanics
+	writeSetting("Game", "toggle sneak", if(prefs.getBoolean("gs_toggle_sneak", true)) "true" else "false")
+	writeSetting("Game", "uncapped damage fatigue", if(prefs.getBoolean("gs_uncapped_damage_fatigue", false)) "true" else "false")
+
+	writeSetting("Game", "rebalance soul gem values", if(prefs.getBoolean("gs_soulgem_values_rebalance", false)) "true" else "false")
+	writeSetting("Game", "followers attack on sight", if(prefs.getBoolean("gs_followers_defend_immediately", false)) "true" else "false")
+	writeSetting("Game", "barter disposition change is permanent", if(prefs.getBoolean("gs_permanent_barter_disposition_changes", false)) "true" else "false")
+	writeSetting("Game", "NPCs avoid collisions", if(prefs.getBoolean("gs_npc_avoid_collision", false)) "true" else "false")
+	writeSetting("Game", "only appropriate ammunition bypasses resistance", if(prefs.getBoolean("gs_only_weapon_bs", false)) "true" else "false")
+	writeSetting("Game", "normalise race speed", if(prefs.getBoolean("gs_racial_variation_in_speed_fix", false)) "true" else "false")
+	writeSetting("Game", "swim upward correction", if(prefs.getBoolean("gs_swim_upward_correction", false)) "true" else "false")
+	writeSetting("Game", "can loot during death animation", if(prefs.getBoolean("gs_can_loot_during_death_animation", true)) "true" else "false")
+	writeSetting("Game", "enchanted weapons are magical", if(prefs.getBoolean("gs_enchanted_weapons_are_magical", true)) "true" else "false")
+	writeSetting("Game", "classic reflected absorb spells behavior", if(prefs.getBoolean("gs_classic_reflected_absorb_spells_behavior", true)) "true" else "false")
+	writeSetting("Game", "always allow stealing from knocked out actors", if(prefs.getBoolean("gs_always_allow_stealing_from_knocked_out_actors", false)) "true" else "false")
+	writeSetting("Game", "allow actors to follow over water surface", if(prefs.getBoolean("gs_always_allow_npc_to_follow_over_water_surface", true)) "true" else "false")
+	writeSetting("Game", "strength influences hand to hand", prefs.getString("gs_factor_strength_into_hand-to-hand_combat", "0").toString())
+
+	// Visuals terrain
+	writeSetting("Terrain", "object paging min size", prefs.getString("gs_object_paging_min_size", "0.01").toString())
+	writeSetting("Terrain", "distant terrain", if(prefs.getBoolean("gs_distant_land", false)) "true" else "false")
+	writeSetting("Terrain", "object paging active grid", if(prefs.getBoolean("gs_active_grid_object_paging", true)) "true" else "false")
+
+	// Visuals graphics
+	writeSetting("Video", "framerate limit", prefs.getString("gs_framerate_limit", "60").toString())
+
+	// Visuals shaders
+	writeSetting("Shaders", "auto use object normal maps", if(prefs.getBoolean("gs_auto_use_object_normal_maps", false)) "true" else "false")
+	writeSetting("Shaders", "auto use object specular maps", if(prefs.getBoolean("gs_auto_use_object_specular_maps", false)) "true" else "false")
+	writeSetting("Shaders", "auto use terrain normal maps", if(prefs.getBoolean("gs_auto_use_terrain_normal_maps", false)) "true" else "false")
+	writeSetting("Shaders", "auto use terrain specular maps", if(prefs.getBoolean("gs_auto_use_terrain_specular_maps", false)) "true" else "false")
+	writeSetting("Shaders", "apply lighting to environment maps", if(prefs.getBoolean("gs_bump_map_local_lighting", false)) "true" else "false")
+
+	// Visuals fog
+	writeSetting("Fog", "radial fog", if(prefs.getBoolean("gs_radial_fog", false)) "true" else "false")
+	writeSetting("Fog", "exponential fog", if(prefs.getBoolean("gs_exponential_fog", false)) "true" else "false")
+	writeSetting("Fog", "sky blending", if(prefs.getBoolean("gs_sky_blending", false)) "true" else "false")
+
+	// Visuals PostProcessing
+	writeSetting("Post Processing", "soft particles", if(prefs.getBoolean("gs_soft_particles", false)) "true" else "false")
+	writeSetting("Post Processing", "transparent postpass", if(prefs.getBoolean("gs_transparent_postpass", false)) "true" else "false")
+
+	// Animations
+	writeSetting("Game", "use magic item animations", if(prefs.getBoolean("gs_use_magic_item_animation", false)) "true" else "false")
+	writeSetting("Game", "use additional anim sources", if(prefs.getBoolean("gs_use_additional_animation_sources", false)) "true" else "false")
+	writeSetting("Game", "weapon sheathing", if(prefs.getBoolean("gs_weapon_sheating", false)) "true" else "false")
+	writeSetting("Game", "shield sheathing", if(prefs.getBoolean("gs_shield_sheating", false)) "true" else "false")
+	writeSetting("Game", "graphic herbalism", if(prefs.getBoolean("gs_enable_graphics_herbalism", true)) "true" else "false")
+	writeSetting("Game", "smooth movement", if(prefs.getBoolean("gs_smooth_movement", false)) "true" else "false")
+	writeSetting("Game", "turn to movement direction", if(prefs.getBoolean("gs_turn_to_movement_direction", false)) "true" else "false")
+
+	// Interface
+	writeSetting("Game", "show owned", prefs.getString("gs_show_owned", "0").toString())
+	writeSetting("Game", "show effect duration", if(prefs.getBoolean("gs_show_effect_duration", false)) "true" else "false")
+	writeSetting("Game", "show enchant chance", if(prefs.getBoolean("gs_show_enchant_chance", false)) "true" else "false")
+	writeSetting("Game", "show melee info", if(prefs.getBoolean("gs_show_melee_info", false)) "true" else "false")
+	writeSetting("Game", "show projectile damage", if(prefs.getBoolean("gs_show_projectile_damage", false)) "true" else "false")
+	writeSetting("GUI", "color topic enable", if(prefs.getBoolean("gs_change_dialogue_topic_color", false)) "true" else "false")
+	writeSetting("GUI", "stretch menu background", if(prefs.getBoolean("gs_stretch_menu_background", false)) "true" else "false")
+	writeSetting("Map", "allow zooming", if(prefs.getBoolean("gs_can_zoom_on_maps", false)) "true" else "false")
+
+	// Bug Fixes
+	writeSetting("Game", "prevent merchant equipping", if(prefs.getBoolean("gs_merchant_equipping_fix", false)) "true" else "false")
+	writeSetting("Game", "trainers training skills based on base skill", if(prefs.getBoolean("gs_trainers_bs", false)) "true" else "false")
+
+	// Miscellaneous
+	writeSetting("Saves", "timeplayed", if(prefs.getBoolean("gs_add_time_to_saves", false)) "true" else "false")
+	writeSetting("Saves", "max quicksaves", prefs.getString("gs_maximum_quicksaves", "1").toString())
+
+	// Engine Settings
+	writeSetting("Groundcover", "enabled", if(prefs.getString("gs_groundcover_handling", "0") == "2") "true" else "false")
+	writeSetting("Groundcover", "paging", if(prefs.getString("gs_groundcover_handling", "0") == "1") "true" else "false")
+	writeSetting("Navigator", "enable", if(prefs.getBoolean("gs_build_navmesh", true)) "true" else "false")
+	writeSetting("Navigator", "write to navmeshdb", if(prefs.getBoolean("gs_write_navmesh", false)) "true" else "false")
+	writeSetting("Navigator", "async nav mesh updater threads", prefs.getString("gs_navmesh_threads", "1").toString())
+	writeSetting("Physics", "async num threads", prefs.getString("gs_physics_threads", "1").toString())
+	writeSetting("Cells", "preload num threads", prefs.getString("gs_preload_threads", "1").toString())
+
+    }
     private fun startGame() {
         // Get scaling factor from config; if invalid or not provided, generate one
         var scaling = 0f
@@ -501,31 +639,12 @@ class MainActivity : AppCompatActivity() {
 
                 //val displayInCutoutArea = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pref_display_cutout_area", false)
                 obtainFixedScreenResolution()
-                val dm = DisplayMetrics()
-                windowManager.defaultDisplay.getRealMetrics(dm)
-
-                val orientation = this.getResources().getConfiguration().orientation
-                var displayWidth = 0
-                var displayHeight = 0
-
-                if (orientation == Configuration.ORIENTATION_PORTRAIT)
-                {
-                    displayWidth = if(resolutionX == 0) dm.heightPixels else resolutionX
-                    displayHeight = if(resolutionY == 0) dm.widthPixels else resolutionY
-                }
-                else
-                {
-                    displayWidth = if(resolutionX == 0) dm.widthPixels else resolutionX
-                    displayHeight = if(resolutionY == 0) dm.heightPixels else resolutionY
-                }
                
                 configureDefaultsBin(mapOf(
                         "scaling factor" to "%.2f".format(Locale.ROOT, scaling),
                         // android-specific defaults
                         "viewing distance" to "2048.0",
                         "camera sensitivity" to "0.4",
-                        "resolution x" to displayWidth.toString(),
-                        "resolution y" to displayHeight.toString(),
                         // and a bunch of windows positioning
                         "stats x" to "0.0",
                         "stats y" to "0.0",
@@ -571,91 +690,10 @@ class MainActivity : AppCompatActivity() {
                         "companion x" to "0.25",
                         "companion y" to "0.0",
                         "companion w" to "0.75",
-                        "companion h" to "0.375",
-
-			// Game Mechanics
-                        "toggle sneak" to if(prefs.getBoolean("gs_toggle_sneak", true)) "true" else "false",
-                        "uncapped damage fatigue" to if(prefs.getBoolean("gs_uncapped_damage_fatigue", false)) "true" else "false",
-                        "rebalance soul gem values" to if(prefs.getBoolean("gs_soulgem_values_rebalance", false)) "true" else "false",
-                        "followers attack on sight" to if(prefs.getBoolean("gs_followers_defend_immediately", false)) "true" else "false",
-                        "barter disposition change is permanent" to if(prefs.getBoolean("gs_permanent_barter_disposition_changes", false)) "true" else "false",
-                        "NPCs avoid collisions" to if(prefs.getBoolean("gs_npc_avoid_collision", false)) "true" else "false",
-                        "only appropriate ammunition bypasses resistance" to if(prefs.getBoolean("gs_only_weapon_bs", false)) "true" else "false",
-                        "normalise race speed" to if(prefs.getBoolean("gs_racial_variation_in_speed_fix", false)) "true" else "false",
-                        "swim upward correction" to if(prefs.getBoolean("gs_swim_upward_correction", false)) "true" else "false",
-                        "can loot during death animation" to if(prefs.getBoolean("gs_can_loot_during_death_animation", true)) "true" else "false",
-                        "enchanted weapons are magical" to if(prefs.getBoolean("gs_enchanted_weapons_are_magical", true)) "true" else "false",
-                        "classic reflected absorb spells behavior" to if(prefs.getBoolean("gs_classic_reflected_absorb_spells_behavior", true)) "true" else "false",
-                        "always allow stealing from knocked out actors" to if(prefs.getBoolean("gs_always_allow_stealing_from_knocked_out_actors", false)) "true" else "false",
-                        "allow actors to follow over water surface" to if(prefs.getBoolean("gs_always_allow_npc_to_follow_over_water_surface", true)) "true" else "false",
-                        "strength influences hand to hand" to prefs.getString("gs_factor_strength_into_hand-to-hand_combat", "0").toString(),
-
-			// Visuals terrain
-                        "object paging min size" to prefs.getString("gs_object_paging_min_size", "0.01").toString(),
-                        "distant terrain" to if(prefs.getBoolean("gs_distant_land", false)) "true" else "false",
-                        "object paging active grid" to if(prefs.getBoolean("gs_active_grid_object_paging", true)) "true" else "false",
-
-			// Visuals graphics
-                        //"antialiasing" to prefs.getString("gs_antialiasing", "0").toString(),
-                        "framerate limit" to prefs.getString("gs_framerate_limit", "60").toString(),
-
-			// Visuals shaders
-                        "auto use object normal maps" to if(prefs.getBoolean("gs_auto_use_object_normal_maps", false)) "true" else "false",
-                        "auto use object specular maps" to if(prefs.getBoolean("gs_auto_use_object_specular_maps", false)) "true" else "false",
-                        "auto use terrain normal maps" to if(prefs.getBoolean("gs_auto_use_terrain_normal_maps", false)) "true" else "false",
-                        "auto use terrain specular maps" to if(prefs.getBoolean("gs_auto_use_terrain_specular_maps", false)) "true" else "false",
-                        "apply lighting to environment maps" to if(prefs.getBoolean("gs_bump_map_local_lighting", false)) "true" else "false",
-                        //"soft particles" to if(prefs.getBoolean("gs_soft_particles", false)) "true" else "false",
-
-			// Visuals fog
-                        "radial fog" to if(prefs.getBoolean("gs_radial_fog", false)) "true" else "false",
-                        "exponential fog" to if(prefs.getBoolean("gs_exponential_fog", false)) "true" else "false",
-                        "sky blending" to if(prefs.getBoolean("gs_sky_blending", false)) "true" else "false",
-
-			// Visuals PostProcessing
-                        "soft particles" to if(prefs.getBoolean("gs_soft_particles", false)) "true" else "false",
-                        "transparent postpass" to if(prefs.getBoolean("gs_transparent_postpass", false)) "true" else "false",
-
-			// Animations
-                        "use magic item animations" to if(prefs.getBoolean("gs_use_magic_item_animation", false)) "true" else "false",
-                        "use additional anim sources" to if(prefs.getBoolean("gs_use_additional_animation_sources", false)) "true" else "false",
-                        "weapon sheathing" to if(prefs.getBoolean("gs_weapon_sheating", false)) "true" else "false",
-                        "shield sheathing" to if(prefs.getBoolean("gs_shield_sheating", false)) "true" else "false",
-                        "graphic herbalism" to if(prefs.getBoolean("gs_enable_graphics_herbalism", true)) "true" else "false",
-                        "smooth movement" to if(prefs.getBoolean("gs_smooth_movement", false)) "true" else "false",
-                        "turn to movement direction" to if(prefs.getBoolean("gs_turn_to_movement_direction", false)) "true" else "false",
-
-			// Animations FirstPerson
-                        "hand inertia" to if(prefs.getBoolean("gs_hand_inertia", false)) "3.0" else "0.0",
-
-			// Interface
-                        "show owned" to prefs!!.getString("gs_show_owned", "0").toString(),
-                        "show effect duration" to if(prefs.getBoolean("gs_show_effect_duration", false)) "true" else "false",
-                        "show enchant chance" to if(prefs.getBoolean("gs_show_enchant_chance", false)) "true" else "false",
-                        "show melee info" to if(prefs.getBoolean("gs_show_melee_info", false)) "true" else "false",
-                        "show projectile damage" to if(prefs.getBoolean("gs_show_projectile_damage", false)) "true" else "false",
-                        "color topic enable" to if(prefs.getBoolean("gs_change_dialogue_topic_color", false)) "true" else "false",
-                        "stretch menu background" to if(prefs.getBoolean("gs_stretch_menu_background", false)) "true" else "false",
-                        "allow zooming" to if(prefs.getBoolean("gs_can_zoom_on_maps", false)) "true" else "false",
-
-			// Bug Fixes
-                        "prevent merchant equipping" to if(prefs.getBoolean("gs_merchant_equipping_fix", false)) "true" else "false",
-                        "trainers training skills based on base skill" to if(prefs.getBoolean("gs_trainers_bs", false)) "true" else "false",
-
-			// Miscellaneous
-                        "timeplayed" to if(prefs.getBoolean("gs_add_time_to_saves", false)) "true" else "false",
-                        "max quicksaves" to prefs.getString("gs_maximum_quicksaves", "1").toString(),
-
-			// Engine Settings
-                        "enabled" to if(prefs.getString("gs_groundcover_handling", "0") == "2") "true" else "false",
-                        "paging" to if(prefs.getString("gs_groundcover_handling", "0") == "1") "true" else "false",
-                        "enable" to if(prefs.getBoolean("gs_build_navmesh", true)) "true" else "false",
-                        "write to navmeshdb" to if(prefs.getBoolean("gs_write_navmesh", false)) "true" else "false",
-                        "async nav mesh updater threads" to prefs.getString("gs_navmesh_threads", "1").toString(),
-                        "async num threads" to prefs.getString("gs_physics_threads", "1").toString(),
-                        "preload num threads" to prefs.getString("gs_preload_threads", "1").toString()
-
+                        "companion h" to "0.375"
                 ))
+
+		writeUserSettings()
 
                 runOnUiThread {
                     obtainFixedScreenResolution()
