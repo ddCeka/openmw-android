@@ -64,6 +64,9 @@ import java.util.*
 
 import android.util.Base64
 
+import android.view.DisplayCutout
+import android.graphics.Rect
+
 import android.content.res.Configuration
 
 class MainActivity : AppCompatActivity() {
@@ -460,9 +463,9 @@ class MainActivity : AppCompatActivity() {
         File(Constants.USER_CONFIG + "/settings.cfg").createNewFile()
 
 	// Write resolution to prevent issues if incorect one is set, probably need to account notch size too
+        val displayInCutoutArea = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pref_display_cutout_area", false)
 	val dm = DisplayMetrics()
 	windowManager.defaultDisplay.getRealMetrics(dm)
-
 	val orientation = this.getResources().getConfiguration().orientation
 	var displayWidth = 0
 	var displayHeight = 0
@@ -471,11 +474,23 @@ class MainActivity : AppCompatActivity() {
 	{
 		displayWidth = if(resolutionX == 0) dm.heightPixels else resolutionX
 		displayHeight = if(resolutionY == 0) dm.widthPixels else resolutionY
+                if( displayInCutoutArea == false && resolutionX == 0) {
+                    val cutoutRectTop = windowManager.defaultDisplay.getCutout()!!.getBoundingRectTop()
+                    val cutoutRectBottom = windowManager.defaultDisplay.getCutout()!!.getBoundingRectBottom()
+                    if (cutoutRectTop != null && cutoutRectBottom != null)
+                        displayWidth = dm.heightPixels - maxOf(cutoutRectTop.bottom, cutoutRectBottom.bottom - cutoutRectBottom.top)
+                }
 	}
 	else
 	{
 		displayWidth = if(resolutionX == 0) dm.widthPixels else resolutionX
 		displayHeight = if(resolutionY == 0) dm.heightPixels else resolutionY
+                if( displayInCutoutArea == false && resolutionY == 0) {
+                    val cutoutRectLeft = windowManager.defaultDisplay.getCutout()!!.getBoundingRectLeft()
+                    val cutoutRectRight = windowManager.defaultDisplay.getCutout()!!.getBoundingRectRight()
+                    if (cutoutRectLeft != null && cutoutRectRight != null)
+                        displayWidth = dm.widthPixels - maxOf(cutoutRectLeft.right, cutoutRectRight.right - cutoutRectRight.left)
+                }
 	}
 
 	writeSetting("Video", "resolution x", displayWidth.toString())
@@ -640,7 +655,6 @@ class MainActivity : AppCompatActivity() {
                 if(resourcesDirCreated)
                     src.copyRecursively(dst, false) 
 
-                //val displayInCutoutArea = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pref_display_cutout_area", false)
                 obtainFixedScreenResolution()
                
                 configureDefaultsBin(mapOf(
