@@ -40,14 +40,4 @@
             android:summary="Affects side and diagonal movement. Enabling this setting makes movement more realistic. If disabled then the whole character's body is pointed to the direction of view. Diagonal movement has no special animation and causes sliding. If enabled then the character turns lower body to the direction of movement. Upper body is turned partially. Head is always pointed to the direction of view. In combat mode it works only for diagonal movement. In non-combat mode it changes straight right and straight left movement as well. Also turns the whole body up or down when swimming according to the movement direction."/>
 
     </PreferenceCategory>
-
-    <PreferenceCategory android:title="First person">
-
-        <CheckBoxPreference
-            android:key="gs_hand_inertia"
-            android:title="Hand Inertia"
-            android:summary="Causes hands to chase view direction slightly when turning, instead of matching the camera perfectly."/>
-
-    </PreferenceCategory>
-
 </PreferenceScreen>

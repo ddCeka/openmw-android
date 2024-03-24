@@ -71,6 +71,14 @@
             android:label="@string/visuals_activity_settings"
             />
         <activity
+            android:name="ui.activity.Shadows_SettingsActivity"
+            android:configChanges="keyboardHidden|orientation|screenSize"
+            android:screenOrientation="fullUser"
+            android:theme="@style/MyTheme"
+            android:exported="true"
+            android:label="@string/shadows_activity_settings"
+            />
+        <activity
             android:name="ui.activity.Animations_SettingsActivity"
             android:configChanges="keyboardHidden|orientation|screenSize"
             android:screenOrientation="fullUser"

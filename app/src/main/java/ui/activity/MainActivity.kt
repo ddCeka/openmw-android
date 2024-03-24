@@ -523,6 +523,27 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Post Processing", "soft particles", if(prefs.getBoolean("gs_soft_particles", false)) "true" else "false")
 	writeSetting("Post Processing", "transparent postpass", if(prefs.getBoolean("gs_transparent_postpass", false)) "true" else "false")
 
+	// Visuals Shadows
+        if(File(Constants.USER_CONFIG + "/extensions.log").exists() &&
+           File(Constants.USER_CONFIG + "/extensions.log").readText().contains("GL_EXT_depth_clamp")) {
+
+            writeSetting("Shadows", "enable shadows",
+            if(prefs.getBoolean("gs_object_shadows", false) || prefs.getBoolean("gs_terrain_shadows", false) ||
+                 prefs.getBoolean("gs_actor_shadows", false) || prefs.getBoolean("gs_player_shadows", false))
+                 "true" else "false")
+
+	    writeSetting("Shadows", "object shadows", if(prefs.getBoolean("gs_object_shadows", false)) "true" else "false")
+	    writeSetting("Shadows", "terrain shadows", if(prefs.getBoolean("gs_terrain_shadows", false)) "true" else "false")
+	    writeSetting("Shadows", "actor shadows", if(prefs.getBoolean("gs_actor_shadows", false)) "true" else "false")
+	    writeSetting("Shadows", "player shadows", if(prefs.getBoolean("gs_player_shadows", false)) "true" else "false")
+	    writeSetting("Shadows", "indoor shadows", if(prefs.getBoolean("gs_indoor_shadows", true)) "true" else "false")
+	    writeSetting("Shadows", "shadow map resolution", prefs.getString("gs_shadow_map_resolution", "1024").toString())
+	    writeSetting("Shadows", "compute scene bounds", prefs.getString("gs_shadow_computation_method", "bounds").toString())
+	    writeSetting("Shadows", "maximum shadow map distance", prefs.getString("gs_shadows_distance", "8192").toString())
+	    writeSetting("Shadows", "shadow fade start", prefs.getString("gs_shadows_fade_start", "0.9").toString())
+	    writeSetting("Shadows", "percentage closer filtering", prefs.getString("gs_shadows_pcf", "1").toString())
+        }
+
 	// Animations
 	writeSetting("Game", "use magic item animations", if(prefs.getBoolean("gs_use_magic_item_animation", false)) "true" else "false")
 	writeSetting("Game", "use additional anim sources", if(prefs.getBoolean("gs_use_additional_animation_sources", false)) "true" else "false")
@@ -572,24 +593,6 @@ class MainActivity : AppCompatActivity() {
                 putString("pref_uiScaling", "")
                 apply()
             }
-        }
-
-        // set up gamma, if invalid, use the default (1.0)
-        var gamma = 1.0f
-        try {
-            gamma = prefs.getString("pref_gamma", "")!!.toFloat()
-        } catch (e: NumberFormatException) {
-            // Reset the invalid setting
-            with(prefs.edit()) {
-                putString("pref_gamma", "")
-                apply()
-            }
-        }
-
-        try {
-            Os.setenv("OPENMW_GAMMA", "%.2f".format(Locale.ROOT, gamma), true)
-        } catch (e: ErrnoException) {
-            // can't really do much if that fails...
         }
 
         // If scaling didn't get set, determine it automatically

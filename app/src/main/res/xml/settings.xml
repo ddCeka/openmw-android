@@ -87,10 +87,6 @@
             android:summary="%s"
             />
 
-        <CheckBoxPreference
-            android:key="pref_nohighp"
-            android:title="@string/pref_nohighp"/>
-
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/pref_graphics">
@@ -105,14 +101,6 @@
             android:key="pref_display_cutout_area"
             android:title="@string/pref_display_cutout_area" />
 
-        <EditTextPreference
-            android:key="pref_gamma"
-            android:title="@string/pref_gamma"
-            android:dialogTitle="@string/pref_gamma"
-            android:inputType="numberDecimal"
-            android:hint="1.0"
-            />
-
         <ListPreference
             android:key="pref_textureShrinking_v2"
             android:title="@string/pref_textureShrinking"
@@ -120,16 +108,6 @@
             android:entries="@array/pref_textureShrinking_entries"
             android:entryValues="@array/pref_textureShrinking_values"
             android:defaultValue="@string/pref_textureShrinking_default"
-            android:summary="%s"
-        />
-
-        <ListPreference
-            android:key="pref_shadersDir_v2"
-            android:title="@string/pref_shadersDir"
-            android:dialogTitle="@string/pref_shadersDir"
-            android:entries="@array/pref_shadersDir_entries"
-            android:entryValues="@array/pref_shadersDir_values"
-            android:defaultValue="@string/pref_shadersDir_default"
             android:summary="%s"
         />
     </PreferenceCategory>
@@ -144,17 +122,7 @@
             android:key="envLine"
             android:title="@string/pref_envLine"
             />
-        
-        <ListPreference
-            android:key="pref_graphicsLibrary_v2"
-            android:title="@string/pref_graphicsLibrary"
-            android:dialogTitle="@string/pref_graphicsLibrary"
-            android:entries="@array/pref_graphicsLibrary_entries"
-            android:entryValues="@array/pref_graphicsLibrary_values"
-            android:defaultValue="@string/pref_graphicsLibrary_default"
-            android:summary="%s"
-        />
-        
+
     </PreferenceCategory>
 
 </PreferenceScreen>
