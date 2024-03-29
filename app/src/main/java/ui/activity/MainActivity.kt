@@ -96,6 +96,13 @@ class MainActivity : AppCompatActivity() {
         if (prefs.getString("bugsnag_consent", "")!! == "") {
             askBugsnagConsent()
         }
+
+        // create user dirs
+        File(Constants.USER_CONFIG).mkdirs()
+        File(Constants.USER_FILE_STORAGE + "/launcher/icons").mkdirs()
+        if (!File(Constants.USER_FILE_STORAGE + "/launcher/icons/paste custom icons here.txt").exists())
+            File(Constants.USER_FILE_STORAGE + "/launcher/icons/paste custom icons here.txt").writeText(
+"attack.png \ninventory.png \njournal.png \njump.png \nkeyboard.png \nmouse.png \npause.png \npointer_arrow.png \nrun.png \nsave.png \nsneak.png \nthird_person.png \ntoggle_magic.png \ntoggle_weapon.png \ntoggle.png \nuse.png \nwait.png")
     }
 
     /**
@@ -192,9 +199,14 @@ class MainActivity : AppCompatActivity() {
 	var dataFilesList = ArrayList<String>()
 	dataFilesList.add(inst.findDataFiles())
 
-	File(inst.findDataFiles().dropLast(10)).listFiles().forEach {
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this)
+            .getString("mods_dir", "")!!
+
+        File(Constants.USER_FILE_STORAGE + "/launcher/ModsDatabases" + modsDir).mkdirs()
+
+	File(modsDir).listFiles().forEach {
 	    if (!it.isFile())
-	        dataFilesList.add(inst.findDataFiles().dropLast(10) + it.getName())
+	        dataFilesList.add(modsDir + it.getName())
 	}
 
         val plugins = ModsCollection(ModType.Plugin, dataFilesList,
@@ -282,16 +294,19 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this)
+            .getString("mods_dir", "")!!
+
         val db = ModsDatabaseOpenHelper.getInstance(this)
 
 	var dataFilesList = ArrayList<String>()
 	var dataDirsPath = ArrayList<String>()
 	dataFilesList.add(GameInstaller.getDataFiles(this))
-        dataDirsPath.add(GameInstaller.getDataFiles(this).dropLast(10))
+        dataDirsPath.add(modsDir)
 
-	File(GameInstaller.getDataFiles(this).dropLast(10)).listFiles().forEach {
+	File(modsDir).listFiles().forEach {
 	    if (!it.isFile())
-	        dataFilesList.add(GameInstaller.getDataFiles(this).dropLast(10) + it.getName())
+	        dataFilesList.add(modsDir + it.getName())
 	}
 
         val resources = ModsCollection(ModType.Resource, dataFilesList, db)
@@ -311,7 +326,7 @@ class MainActivity : AppCompatActivity() {
             // output data dirs
             dirs.mods
                 .filter { it.enabled }
-                .forEach { output += "data=" + '"' + GameInstaller.getDataFiles(this).dropLast(10) + it.filename + '"' + "\n" }
+                .forEach { output += "data=" + '"' + modsDir + it.filename + '"' + "\n" }
 
             // output plugins
             plugins.mods
@@ -367,12 +382,6 @@ class MainActivity : AppCompatActivity() {
         if (!File(Constants.USER_OPENMW_CFG).exists())
             File(Constants.USER_OPENMW_CFG).writeText("# This is the user openmw.cfg. Feel free to modify it as you wish.\n")
 
-        // create user custom icon folder as a hint
-        File(Constants.USER_FILE_STORAGE + "/icons").mkdirs()
-        if (!File(Constants.USER_FILE_STORAGE + "/icons/paste custom icons here.txt").exists())
-            File(Constants.USER_FILE_STORAGE + "/icons/paste custom icons here.txt").writeText(
-"attack.png \ninventory.png \njournal.png \njump.png \nkeyboard.png \nmouse.png \npause.png \npointer_arrow.png \nrun.png \nsave.png \nsneak.png \nthird_person.png \ntoggle_magic.png \ntoggle_weapon.png \ntoggle.png \nuse.png \nwait.png")
-
         // set version stamp
         File(Constants.VERSION_STAMP).writeText(BuildConfig.VERSION_CODE.toString())
     }
@@ -393,6 +402,7 @@ class MainActivity : AppCompatActivity() {
      */
     private fun removeUserConfig() {
         deleteRecursive(File(Constants.USER_CONFIG))
+        File(Constants.USER_CONFIG).mkdirs()
     }
 
     /**
@@ -539,8 +549,8 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Post Processing", "transparent postpass", if(prefs.getBoolean("gs_transparent_postpass", false)) "true" else "false")
 
 	// Visuals Shadows
-        if(File(Constants.USER_CONFIG + "/extensions.log").exists() &&
-           File(Constants.USER_CONFIG + "/extensions.log").readText().contains("GL_EXT_depth_clamp")) {
+        if(File(Constants.USER_CONFIG + "/launcher/extensions.log").exists() &&
+           File(Constants.USER_CONFIG + "/launcher/extensions.log").readText().contains("GL_EXT_depth_clamp")) {
 
             writeSetting("Shadows", "enable shadows",
             if(prefs.getBoolean("gs_object_shadows", false) || prefs.getBoolean("gs_terrain_shadows", false) ||
@@ -594,8 +604,8 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Navigator", "async nav mesh updater threads", prefs.getString("gs_navmesh_threads", "1").toString())
 	writeSetting("Physics", "async num threads", prefs.getString("gs_physics_threads", "1").toString())
 	writeSetting("Cells", "preload num threads", prefs.getString("gs_preload_threads", "1").toString())
-
     }
+
     private fun startGame() {
         // Get scaling factor from config; if invalid or not provided, generate one
         var scaling = 0f

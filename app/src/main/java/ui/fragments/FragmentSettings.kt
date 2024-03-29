@@ -44,6 +44,8 @@ import ui.activity.ModsActivity
 import ui.activity.SettingsActivity
 import utils.MyApp
 import java.util.*
+import java.io.File
+import constants.Constants
 
 class FragmentSettings : PreferenceFragment(), OnSharedPreferenceChangeListener {
 
@@ -134,6 +136,8 @@ class FragmentSettings : PreferenceFragment(), OnSharedPreferenceChangeListener 
 
         with(sharedPref.edit()) {
             putString("game_files", gameFiles)
+            if (sharedPref.getString("mods_dir", "")!! == "")
+                putString("mods_dir", gameFiles + "/")
             apply()
         }
     }

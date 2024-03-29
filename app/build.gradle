@@ -62,10 +62,6 @@ android {
     flavorDimensions "version"
 
     productFlavors {
-        mainline {
-            dimension "version"
-        }
-
         nightly {
             dimension "version"
             applicationId "is.xyz.omw_nightly"

@@ -52,8 +52,8 @@ class OscAttackButton(
     override fun makeView(ctx: Context) {
         val v = ImageView(ctx)
 
-        if (File(Constants.USER_FILE_STORAGE + "/icons/" + iconName).exists())
-            v.setImageBitmap(BitmapFactory.decodeFile(Constants.USER_FILE_STORAGE + "/icons/" + iconName))
+        if (File(Constants.USER_FILE_STORAGE + "/launcger/icons/" + iconName).exists())
+            v.setImageBitmap(BitmapFactory.decodeFile(Constants.USER_FILE_STORAGE + "launcher/icons/" + iconName))
         else
             v.setImageResource(imageSrc)
 

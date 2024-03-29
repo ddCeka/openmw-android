@@ -33,8 +33,15 @@ import mods.*
 import android.view.MenuItem
 import java.io.File
 
-class ModsActivity : AppCompatActivity() {
+import constants.Constants
+import android.view.Menu
+import com.codekidlabs.storagechooser.StorageChooser
+import com.google.android.material.textfield.TextInputLayout
+import android.preference.PreferenceManager
+import android.widget.EditText
+import android.app.AlertDialog
 
+class ModsActivity : AppCompatActivity() {
     val mPluginAdapter = ModsAdapter()
     val mResourceAdapter = ModsAdapter()
     val mDirAdapter = ModsAdapter()
@@ -71,6 +78,9 @@ class ModsActivity : AppCompatActivity() {
             }
         })
 
+        File(Constants.USER_FILE_STORAGE + "/launcher/ModsDatabases" + 
+            PreferenceManager.getDefaultSharedPreferences(this).getString("mods_dir", "")/*.hashCode()*/).mkdirs()
+
         // Set up adapters for the lists
         setupModList(findViewById(R.id.list_mods), ModType.Plugin)
         setupModList(findViewById(R.id.list_resources), ModType.Resource)
@@ -86,24 +96,26 @@ class ModsActivity : AppCompatActivity() {
     }
 
     private fun updateModList() {
-
 	var dataFilesList = ArrayList<String>()
 	dataFilesList.add(GameInstaller.getDataFiles(this))
 
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("mods_dir", "")!!
+        val database = ModsDatabaseOpenHelper(this.applicationContext)
 	// Get list of enabled data directories
 	var dataDirs = ArrayList<String>()
 	var enabledDataDirs = ArrayList<String>()
 	enabledDataDirs.add(GameInstaller.getDataFiles(this))
-	dataDirs.add(GameInstaller.getDataFiles(this).dropLast(10))
+	dataDirs.add(modsDir)
 	val availableDirs = ModsCollection(ModType.Dir, dataDirs, database)
 
 	availableDirs.mods
 	    .filter { it.enabled }
             .forEach { enabledDataDirs.add(it.filename) }
 
-	File(GameInstaller.getDataFiles(this).dropLast(10)).listFiles().forEach {
+	File(modsDir).listFiles().forEach {
 	    if (!it.isFile() && enabledDataDirs.contains(it.getName()) )
-	        dataFilesList.add(GameInstaller.getDataFiles(this).dropLast(10) + it.getName())
+	        dataFilesList.add(modsDir + it.getName())
 	}
 
         mPluginAdapter.collection = ModsCollection(ModType.Plugin, dataFilesList, database)
@@ -121,17 +133,21 @@ class ModsActivity : AppCompatActivity() {
         // This is here just to auto-enable basic plugins (morrowind.esp...) it somehow dont work in updateModList :( 
 	var dataFilesList = ArrayList<String>()
 
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("mods_dir", "")!!
+
 	if (type == ModType.Dir) 
-            dataFilesList.add(GameInstaller.getDataFiles(this).dropLast(10))
+            dataFilesList.add(modsDir)
 	else {
 	    dataFilesList.add(GameInstaller.getDataFiles(this))
 
-	    File(GameInstaller.getDataFiles(this).dropLast(10)).listFiles().forEach {
+	    File(modsDir).listFiles().forEach {
 	        if (!it.isFile())
-	            dataFilesList.add(GameInstaller.getDataFiles(this).dropLast(10) + it.getName())
+	            dataFilesList.add(modsDir + it.getName())
 	    }
         }
 
+        val database = ModsDatabaseOpenHelper(this.applicationContext)
         val linearLayoutManager = LinearLayoutManager(this)
         linearLayoutManager.orientation = RecyclerView.VERTICAL
         list.layoutManager = linearLayoutManager
@@ -170,6 +186,28 @@ class ModsActivity : AppCompatActivity() {
         }
     }
 
+    private fun reloadModLists() {
+        setupModList(findViewById(R.id.list_mods), ModType.Plugin)
+        setupModList(findViewById(R.id.list_resources), ModType.Resource)
+        setupModList(findViewById(R.id.list_dirs), ModType.Dir)
+        setupModList(findViewById(R.id.list_groundcovers), ModType.Groundcover)
+
+        updateModList()
+
+        mPluginAdapter.notifyDataSetChanged()
+        mResourceAdapter.notifyDataSetChanged()
+        mDirAdapter.notifyDataSetChanged()
+        mGroundcoverAdapter.notifyDataSetChanged()
+    }
+
+    override fun onPrepareOptionsMenu(menu: Menu): Boolean {
+        menu.clear()
+        val inflater = menuInflater
+        inflater.inflate(R.menu.mod_manager_settings, menu)
+
+        return super.onPrepareOptionsMenu(menu)
+    }
+
     /**
      * Makes the "back" icon in the actionbar perform the back operation
      */
@@ -180,7 +218,114 @@ class ModsActivity : AppCompatActivity() {
                 true
             }
 
+            R.id.action_set_mods_dir -> {
+
+                val chooser = StorageChooser.Builder()
+                    .withActivity(this)
+                    .withFragmentManager(fragmentManager)
+                    .withMemoryBar(true)
+                    .allowCustomPath(true)
+                    .setType(StorageChooser.DIRECTORY_CHOOSER)
+                    .build()
+
+                chooser.show()
+
+                chooser.setOnSelectListener { path -> setupData(path) }
+                true
+            }
+
+            R.id.action_mods_preset -> {
+                var modPresets = arrayOf("default")
+                val currentModsDir = Constants.USER_FILE_STORAGE + "/launcher/ModsDatabases/" + 
+                                PreferenceManager.getDefaultSharedPreferences(this).getString("mods_dir", "")!!
+                val currentPreset = PreferenceManager.getDefaultSharedPreferences(this).getString("mods_database", "default")!!
+                var currentPresetLocation = 0
+                var counter = 1
+
+                File(currentModsDir).listFiles().forEach {  
+                    if (it.isFile() && !it.getName().contains("-journal") && it.getName() != "default") {
+                        modPresets += it.getName()
+                        if (it.getName() == currentPreset) currentPresetLocation = counter
+                        counter += 1
+                    }
+
+                }
+
+                AlertDialog.Builder(this)
+                .setTitle("Choose mod preset")
+                .setSingleChoiceItems(modPresets, currentPresetLocation) { dialog, which ->
+                    updateModList()
+                    val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
+                    with(sharedPref.edit()) {
+                        putString("mods_database", modPresets[which])
+                       apply()
+                    }
+                    reloadModLists()
+                    dialog.dismiss()
+                }
+                .setNegativeButton("Add") { dialog, which -> 
+                    val textInputLayout = TextInputLayout(this)
+                    textInputLayout.setPadding(19, 0, 19, 0)
+                    val input = EditText(this)
+                    textInputLayout.addView(input)
+
+                    val alert = AlertDialog.Builder(this)
+                        .setTitle("Create mods colection")
+                        .setView(textInputLayout)
+                        .setMessage("Select name.")
+                        .setPositiveButton("Create") { dialog, _ ->
+                            updateModList()
+                            val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
+                            with(sharedPref.edit()) {
+                                putString("mods_database", input.text.toString())
+                                apply()
+                            }
+                            dialog.cancel()
+                            reloadModLists()
+                        }
+                        .setNegativeButton("Cancel") { dialog, _ ->
+                            dialog.cancel()
+                    }.show()
+                }
+                .setNeutralButton("delete") { dialog, which -> 
+                    val alert = AlertDialog.Builder(this)
+                        .setTitle("Delete preset")
+                        .setMessage("Do you want to delete " + currentPreset + " preset?")
+                        .setPositiveButton("Yes") { dialog, _ ->
+                            updateModList()
+                            val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
+                            with(sharedPref.edit()) {
+                                putString("mods_database", "default")
+                                apply()
+                            }
+                            dialog.cancel()
+                            reloadModLists() 
+                            File(currentModsDir + currentPreset).delete()
+                            File(currentModsDir + currentPreset + "-journal").delete()
+                        }
+                        .setNegativeButton("No") { dialog, _ ->
+                            dialog.cancel()
+                    }.show()
+                }
+                .setPositiveButton("Cancel") { dialog, which -> }
+                .show()
+
+                true
+            }
+
             else -> super.onOptionsItemSelected(item)
         }
+    }
+
+    private fun setupData(path: String) {
+        val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
+        updateModList()
+        with(sharedPref.edit()) {
+            putString("mods_dir", path + "/")
+            putString("mods_database", "default")
+            apply()
+        }
+
+        reloadModLists()
     }
 }

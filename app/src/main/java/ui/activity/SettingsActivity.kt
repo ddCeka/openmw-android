@@ -200,7 +200,7 @@ class FragmentGameSettingsPage(val res: Int) : PreferenceFragment(), OnSharedPre
             //val eglSurface = egl.eglCreateWindowSurface(eglDisplay, eglConfig, texture_view.surfaceTexture, null)
             if (egl.eglMakeCurrent(eglDisplay, EGL_NO_SURFACE, EGL_NO_SURFACE, eglContext) == true) {
                 val extensions = GLES20.glGetString(GLES20.GL_EXTENSIONS)
-                File(Constants.USER_CONFIG + "/extensions.log").writeText(extensions.replace(" ", "\n"))
+                File(Constants.USER_CONFIG + "/launcher/extensions.log").writeText(extensions.replace(" ", "\n"))
 
                 egl.eglDestroyContext(eglDisplay, eglContext)
                 //egl.eglDestroySurface(eglDisplay, eglSurface)

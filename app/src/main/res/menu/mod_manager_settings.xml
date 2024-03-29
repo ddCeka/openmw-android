@@ -1,0 +1,20 @@
+<menu xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:context=".ModsActivity">
+    <group android:id="@+id/mod_menu_group">
+
+        <item
+            android:id="@+id/action_set_mods_dir"
+            android:title="@string/action_set_mods_dir"
+            app:showAsAction="never"
+            />
+
+        <item
+            android:id="@+id/action_mods_preset"
+            android:title="@string/action_mods_preset"
+            app:showAsAction="never"
+            />
+
+    </group>
+</menu>
