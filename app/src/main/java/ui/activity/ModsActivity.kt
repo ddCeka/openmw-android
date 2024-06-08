@@ -99,8 +99,7 @@ class ModsActivity : AppCompatActivity() {
 	var dataFilesList = ArrayList<String>()
 	dataFilesList.add(GameInstaller.getDataFiles(this))
 
-        val modsDir = PreferenceManager.getDefaultSharedPreferences(this)
-                .getString("mods_dir", "")!!
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this).getString("mods_dir", "")!!
         val database = ModsDatabaseOpenHelper(this.applicationContext)
 	// Get list of enabled data directories
 	var dataDirs = ArrayList<String>()
@@ -229,21 +228,20 @@ class ModsActivity : AppCompatActivity() {
                     .build()
 
                 chooser.show()
-
                 chooser.setOnSelectListener { path -> setupData(path) }
                 true
             }
 
             R.id.action_mods_preset -> {
-                var modPresets = arrayOf("default")
+                var modPresets = arrayOf("Default")
                 val currentModsDir = Constants.USER_FILE_STORAGE + "/launcher/ModsDatabases/" + 
                                 PreferenceManager.getDefaultSharedPreferences(this).getString("mods_dir", "")!!
-                val currentPreset = PreferenceManager.getDefaultSharedPreferences(this).getString("mods_database", "default")!!
+                val currentPreset = PreferenceManager.getDefaultSharedPreferences(this).getString("mods_database", "Default")!!
                 var currentPresetLocation = 0
                 var counter = 1
 
                 File(currentModsDir).listFiles().forEach {  
-                    if (it.isFile() && !it.getName().contains("-journal") && it.getName() != "default") {
+                    if (it.isFile() && !it.getName().contains("-journal") && it.getName() != "Default") {
                         modPresets += it.getName()
                         if (it.getName() == currentPreset) currentPresetLocation = counter
                         counter += 1
@@ -252,7 +250,7 @@ class ModsActivity : AppCompatActivity() {
                 }
 
                 AlertDialog.Builder(this)
-                .setTitle("Choose mod preset")
+                .setTitle("Choose content list")
                 .setSingleChoiceItems(modPresets, currentPresetLocation) { dialog, which ->
                     updateModList()
                     val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
@@ -263,39 +261,41 @@ class ModsActivity : AppCompatActivity() {
                     reloadModLists()
                     dialog.dismiss()
                 }
-                .setNegativeButton("Add") { dialog, which -> 
+                .setNegativeButton("New") { dialog, which -> 
                     val textInputLayout = TextInputLayout(this)
                     textInputLayout.setPadding(19, 0, 19, 0)
                     val input = EditText(this)
                     textInputLayout.addView(input)
 
                     val alert = AlertDialog.Builder(this)
-                        .setTitle("Create mods colection")
+                        .setTitle("Create content list")
                         .setView(textInputLayout)
                         .setMessage("Select name.")
                         .setPositiveButton("Create") { dialog, _ ->
-                            updateModList()
-                            val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
-                            with(sharedPref.edit()) {
-                                putString("mods_database", input.text.toString())
-                                apply()
+                            if (input.text.toString() != "") {
+                                updateModList()
+                                val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
+                                with(sharedPref.edit()) {
+                                    putString("mods_database", input.text.toString())
+                                    apply()
+                                }
+                                reloadModLists()
                             }
                             dialog.cancel()
-                            reloadModLists()
                         }
                         .setNegativeButton("Cancel") { dialog, _ ->
                             dialog.cancel()
                     }.show()
                 }
                 .setNeutralButton("delete") { dialog, which -> 
-                    val alert = AlertDialog.Builder(this)
-                        .setTitle("Delete preset")
-                        .setMessage("Do you want to delete " + currentPreset + " preset?")
+                    if (currentPreset != "Default") AlertDialog.Builder(this)
+                        .setTitle("Delete current content list")
+                        .setMessage("Do you want to delete " + currentPreset + " content list?")
                         .setPositiveButton("Yes") { dialog, _ ->
                             updateModList()
                             val sharedPref = PreferenceManager.getDefaultSharedPreferences(this)
                             with(sharedPref.edit()) {
-                                putString("mods_database", "default")
+                                putString("mods_database", "Default")
                                 apply()
                             }
                             dialog.cancel()
@@ -322,7 +322,7 @@ class ModsActivity : AppCompatActivity() {
         updateModList()
         with(sharedPref.edit()) {
             putString("mods_dir", path + "/")
-            putString("mods_database", "default")
+            putString("mods_database", "Default")
             apply()
         }
 

@@ -28,6 +28,7 @@ import android.content.SharedPreferences
 import android.content.SharedPreferences.OnSharedPreferenceChangeListener
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Build.VERSION
 import android.preference.EditTextPreference
 import android.preference.Preference
 import android.preference.PreferenceFragment
@@ -107,6 +108,9 @@ class FragmentSettings : PreferenceFragment(), OnSharedPreferenceChangeListener 
             }
             true
         }
+
+        if (android.os.Build.VERSION.SDK_INT < 29)
+            findPreference("pref_display_cutout_area").isEnabled = false
     }
 
     /**

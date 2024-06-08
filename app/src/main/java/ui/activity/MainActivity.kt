@@ -28,6 +28,7 @@ import android.app.ProgressDialog
 import android.content.*
 import android.net.Uri
 import android.os.Bundle
+import android.os.Build.VERSION
 import android.preference.PreferenceManager
 import android.system.ErrnoException
 import android.system.Os
@@ -100,9 +101,15 @@ class MainActivity : AppCompatActivity() {
         // create user dirs
         File(Constants.USER_CONFIG).mkdirs()
         File(Constants.USER_FILE_STORAGE + "/launcher/icons").mkdirs()
+
+        // create icons files hint
         if (!File(Constants.USER_FILE_STORAGE + "/launcher/icons/paste custom icons here.txt").exists())
             File(Constants.USER_FILE_STORAGE + "/launcher/icons/paste custom icons here.txt").writeText(
 "attack.png \ninventory.png \njournal.png \njump.png \nkeyboard.png \nmouse.png \npause.png \npointer_arrow.png \nrun.png \nsave.png \nsneak.png \nthird_person.png \ntoggle_magic.png \ntoggle_weapon.png \ntoggle.png \nuse.png \nwait.png")
+
+        // create current mods dir in case someone deleted it
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this).getString("mods_dir", "")!!
+        if (modsDir != "" ) File(modsDir).mkdirs()
     }
 
     /**
@@ -473,38 +480,55 @@ class MainActivity : AppCompatActivity() {
         File(Constants.USER_CONFIG + "/settings.cfg").createNewFile()
 
 	// Write resolution to prevent issues if incorect one is set, probably need to account notch size too
-        val displayInCutoutArea = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pref_display_cutout_area", false)
+        val displayInCutoutArea = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pref_display_cutout_area", true)
 	val dm = DisplayMetrics()
 	windowManager.defaultDisplay.getRealMetrics(dm)
 	val orientation = this.getResources().getConfiguration().orientation
 	var displayWidth = 0
 	var displayHeight = 0
+        val cutout = if (android.os.Build.VERSION.SDK_INT < 29) null else windowManager.defaultDisplay.getCutout()
 
-	if (orientation == Configuration.ORIENTATION_PORTRAIT)
-	{
-		displayWidth = if(resolutionX == 0) dm.heightPixels else resolutionX
-		displayHeight = if(resolutionY == 0) dm.widthPixels else resolutionY
-                if( displayInCutoutArea == false && resolutionX == 0) {
-                    val cutoutRectTop = windowManager.defaultDisplay.getCutout()!!.getBoundingRectTop()
-                    val cutoutRectBottom = windowManager.defaultDisplay.getCutout()!!.getBoundingRectBottom()
-                    if (cutoutRectTop != null && cutoutRectBottom != null)
+        if (cutout != null) {
+	    if (orientation == Configuration.ORIENTATION_PORTRAIT)
+	    {
+		    displayWidth = if(resolutionX == 0) dm.heightPixels else resolutionX
+		    displayHeight = if(resolutionY == 0) dm.widthPixels else resolutionY
+                    if( displayInCutoutArea == false && resolutionX == 0) {
+                        val cutoutRectTop = cutout.getBoundingRectTop()
+                        val cutoutRectBottom = cutout.getBoundingRectBottom()
                         displayWidth = dm.heightPixels - maxOf(cutoutRectTop.bottom, cutoutRectBottom.bottom - cutoutRectBottom.top)
-                }
-	}
-	else
-	{
-		displayWidth = if(resolutionX == 0) dm.widthPixels else resolutionX
-		displayHeight = if(resolutionY == 0) dm.heightPixels else resolutionY
-                if( displayInCutoutArea == false && resolutionY == 0) {
-                    val cutoutRectLeft = windowManager.defaultDisplay.getCutout()!!.getBoundingRectLeft()
-                    val cutoutRectRight = windowManager.defaultDisplay.getCutout()!!.getBoundingRectRight()
-                    if (cutoutRectLeft != null && cutoutRectRight != null)
+                    }
+	    }
+	    else
+	    {
+		    displayWidth = if(resolutionX == 0) dm.widthPixels else resolutionX
+		    displayHeight = if(resolutionY == 0) dm.heightPixels else resolutionY
+                    if( displayInCutoutArea == false && resolutionY == 0) {
+                        val cutoutRectLeft = cutout.getBoundingRectLeft()
+                        val cutoutRectRight = cutout.getBoundingRectRight()
                         displayWidth = dm.widthPixels - maxOf(cutoutRectLeft.right, cutoutRectRight.right - cutoutRectRight.left)
-                }
-	}
+                    }
+	    }
 
-	writeSetting("Video", "resolution x", displayWidth.toString())
-	writeSetting("Video", "resolution y", displayHeight.toString())
+	    writeSetting("Video", "resolution x", displayWidth.toString())
+	    writeSetting("Video", "resolution y", displayHeight.toString())
+        }
+        else {
+            if (resolutionX != 0 && resolutionY != 0) {
+                writeSetting("Video", "resolution x", displayWidth.toString())
+	        writeSetting("Video", "resolution y", displayHeight.toString())
+            }
+            else {
+                if (orientation == Configuration.ORIENTATION_PORTRAIT) {
+                    writeSetting("Video", "resolution x", dm.heightPixels.toString())
+	            writeSetting("Video", "resolution y", dm.widthPixels.toString())
+                }
+                else {
+                    writeSetting("Video", "resolution x", dm.widthPixels.toString())
+	            writeSetting("Video", "resolution y", dm.heightPixels.toString())
+                }
+            }
+        }
 
 	// Game Mechanics
 	writeSetting("Game", "toggle sneak", if(prefs.getBoolean("gs_toggle_sneak", true)) "true" else "false")
@@ -545,12 +569,12 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Fog", "sky blending", if(prefs.getBoolean("gs_sky_blending", false)) "true" else "false")
 
 	// Visuals PostProcessing
-	writeSetting("Post Processing", "soft particles", if(prefs.getBoolean("gs_soft_particles", false)) "true" else "false")
+	writeSetting("Shaders", "soft particles", if(prefs.getBoolean("gs_soft_particles", false)) "true" else "false")
 	writeSetting("Post Processing", "transparent postpass", if(prefs.getBoolean("gs_transparent_postpass", false)) "true" else "false")
 
 	// Visuals Shadows
-        if(File(Constants.USER_CONFIG + "/launcher/extensions.log").exists() &&
-           File(Constants.USER_CONFIG + "/launcher/extensions.log").readText().contains("GL_EXT_depth_clamp")) {
+        if(File(Constants.USER_FILE_STORAGE + "/launcher/extensions.log").exists() &&
+           File(Constants.USER_FILE_STORAGE + "/launcher/extensions.log").readText().contains("GL_EXT_depth_clamp")) {
 
             writeSetting("Shadows", "enable shadows",
             if(prefs.getBoolean("gs_object_shadows", false) || prefs.getBoolean("gs_terrain_shadows", false) ||

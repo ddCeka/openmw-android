@@ -25,10 +25,10 @@ import android.database.sqlite.SQLiteDatabase
 import org.jetbrains.anko.db.*
 import constants.Constants
 
-class ModsDatabaseOpenHelper /*private constructor*/(ctx: Context)
+class ModsDatabaseOpenHelper (ctx: Context)
     : ManagedSQLiteOpenHelper(ctx, Constants.USER_FILE_STORAGE + "/launcher/ModsDatabases/" + 
       PreferenceManager.getDefaultSharedPreferences(ctx).getString("mods_dir", "")!!/*.hashCode()*/ + 
-      PreferenceManager.getDefaultSharedPreferences(ctx).getString("mods_database", "default")!!, null, 1) {
+      PreferenceManager.getDefaultSharedPreferences(ctx).getString("mods_database", "Default")!!, null, 1) {
 
     init {
         instance = this
@@ -58,8 +58,3 @@ class ModsDatabaseOpenHelper /*private constructor*/(ctx: Context)
     override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
     }
 }
-/*
-// Access property for Context
-val Context.database: ModsDatabaseOpenHelper
-    get() = ModsDatabaseOpenHelper.getInstance(this)
-*/
