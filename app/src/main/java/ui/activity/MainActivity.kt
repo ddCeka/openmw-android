@@ -70,12 +70,20 @@ import android.graphics.Rect
 
 import android.content.res.Configuration
 
+import android.os.Build
+import java.io.FileWriter
+import java.io.PrintWriter
+import java.text.SimpleDateFormat
+import kotlin.system.exitProcess
+
 class MainActivity : AppCompatActivity() {
     private lateinit var prefs: SharedPreferences
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         MyApp.app.defaultScaling = determineScaling()
+
+        Thread.setDefaultUncaughtExceptionHandler(CaptureCrash())
 
         PermissionHelper.getWriteExternalStoragePermission(this@MainActivity)
         setContentView(R.layout.main)
@@ -853,5 +861,52 @@ class MainActivity : AppCompatActivity() {
 
         var resolutionX = 0
         var resolutionY = 0
+    }
+
+    class CaptureCrash : Thread.UncaughtExceptionHandler {
+        override fun uncaughtException(thread: Thread, throwable: Throwable) {
+            // Save crash log to a file
+            saveCrashLog(throwable)
+
+            // Terminate the app or perform any other necessary action
+            android.os.Process.killProcess(android.os.Process.myPid());
+            exitProcess(1)
+        }
+
+        private fun saveCrashLog(throwable: Throwable) {
+            try {
+
+                val logFile = File(Constants.USER_CONFIG + "/" + "crash.log")
+                if (!logFile.exists()) {
+                    logFile.createNewFile()
+                }
+
+                FileWriter(logFile, true).use { writer ->
+                    writer.append("Device: ${Build.MODEL} (API ${Build.VERSION.SDK_INT})\n")
+                    writer.append("${getCurrentDateTime()}:\t")
+                    printFullStackTrace(throwable,PrintWriter(writer))
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        private fun printFullStackTrace(throwable: Throwable, printWriter: PrintWriter) {
+            printWriter.println(throwable.toString())
+            throwable.stackTrace.forEach { element ->
+                printWriter.print("\t $element \n")
+            }
+            val cause = throwable.cause
+            if (cause != null) {
+                printWriter.print("Caused by:\t")
+                printFullStackTrace(cause, printWriter)
+            }
+            printWriter.print("\n")
+        }
+
+        fun getCurrentDateTime(): String {
+            val sdf = SimpleDateFormat("yyyy-MM-dd", Locale.getDefault())
+            return sdf.format(Date())
+        }
     }
 }
