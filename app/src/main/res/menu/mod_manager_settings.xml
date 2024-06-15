@@ -16,5 +16,20 @@
             app:showAsAction="never"
             />
 
+            <item
+                android:id="@+id/action_tools"
+                android:title="@string/action_tools"
+                app:showAsAction="never" >
+                 <menu>
+
+                   <item android:id="@+id/action_tools_delta_merge"
+                     android:title="@string/action_tools_delta_merge"/>
+
+                   <item android:id="@+id/action_tools_groundcoverify"
+                     android:title="@string/action_tools_groundcoverify" />
+
+                 </menu>
+            </item>
+
     </group>
 </menu>

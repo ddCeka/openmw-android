@@ -41,6 +41,12 @@ import android.preference.PreferenceManager
 import android.widget.EditText
 import android.app.AlertDialog
 
+import android.app.ProgressDialog
+import java.io.IOException
+import android.util.Log
+import java.io.PrintWriter
+import java.io.StringWriter
+
 class ModsActivity : AppCompatActivity() {
     val mPluginAdapter = ModsAdapter()
     val mResourceAdapter = ModsAdapter()
@@ -207,6 +213,231 @@ class ModsActivity : AppCompatActivity() {
         return super.onPrepareOptionsMenu(menu)
     }
 
+
+    //duplicate of generateOpenmwCfg() from main activity
+    private fun generateDeltaCfg(): String {
+        val gamePath = PreferenceManager.getDefaultSharedPreferences(this)
+                .getString("game_files", "")!!
+
+        val modsDir = PreferenceManager.getDefaultSharedPreferences(this)
+            .getString("mods_dir", "")!!
+
+        val db = ModsDatabaseOpenHelper.getInstance(this)
+
+	var dataFilesList = ArrayList<String>()
+	var dataDirsPath = ArrayList<String>()
+	dataFilesList.add(GameInstaller.getDataFiles(this))
+        dataDirsPath.add(modsDir)
+
+	File(modsDir).listFiles().forEach {
+	    if (!it.isFile())
+	        dataFilesList.add(modsDir + it.getName())
+	}
+
+        val resources = ModsCollection(ModType.Resource, dataFilesList, db)
+        val dirs = ModsCollection(ModType.Dir, dataDirsPath, db)
+        val plugins = ModsCollection(ModType.Plugin, dataFilesList, db)
+        val groundcovers = ModsCollection(ModType.Groundcover, dataFilesList, db)
+
+        // generate final output.cfg
+        var output = "data=" + gamePath + "/Data Files\n"
+
+        try {
+            // output resources
+            resources.mods
+                .filter { it.enabled }
+                .forEach { output += "fallback-archive=${it.filename}\n" }
+
+            // output data dirs
+            dirs.mods
+                .filter { it.enabled }
+                .forEach { output += "data=" + '"' + modsDir + it.filename + '"' + "\n" }
+
+            // output plugins
+            plugins.mods
+                .filter { it.enabled }
+                .forEach { output += "content=${it.filename}\n" }
+
+            // output groundcovers
+            groundcovers.mods
+                .filter { it.enabled }
+                .forEach { output += "groundcover=${it.filename}\n" }
+
+            // write everything to delta.cfg
+            output += "data=" + '"' + Constants.USER_FILE_STORAGE + "launcher/delta" + '"' + "\n" 
+
+            File(Constants.USER_FILE_STORAGE + "/launcher/delta").mkdirs()
+
+            output += "\n"
+
+            val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+            lines.removeAll { 
+                it.contains("content=delta-merged.omwaddon") ||
+                it.contains("groundcover=output_groundcover.omwaddon") ||
+                it.contains("content=output_deleted.omwaddon")
+            }
+
+            output += lines.joinToString("\n")
+
+            File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg").writeText(output)
+
+        } catch (e: IOException) {
+            Log.e("OpenMW-Launcher", "Failed to generate delta.cfg.", e)
+        }
+
+        return output
+    }
+
+    private fun shellExec(cmd: String? = null, WorkingDir: String? = null): String {
+        val output = StringBuilder()
+
+        try {
+            val processBuilder = ProcessBuilder()
+            if (WorkingDir != null) {
+                processBuilder.directory(File(WorkingDir))
+            }
+            System.setProperty("HOME", "/data/data/$packageName/files/")
+            val commandToExecute = arrayOf("/system/bin/sh", "-c", "export HOME=/data/data/$packageName/files/; $cmd")
+            processBuilder.command(*commandToExecute)
+            processBuilder.redirectErrorStream(true)
+            val process = processBuilder.start()
+
+            process.inputStream.bufferedReader().use { inputStreamReader ->
+                var line: String?
+                while (inputStreamReader.readLine().also { line = it } != null) {
+                    output.append(line).append("\n")
+                }
+            }
+
+            process.waitFor()
+        } catch (e: Exception) {
+
+            val sw = StringWriter()
+            val pw = PrintWriter(sw)
+            e.printStackTrace(pw)
+            output.append("Error executing command: ").append(e.message).append("\nStacktrace:\n").append(sw.toString())
+
+        }
+
+//        findViewById<EditText>(R.id.command_input).text.clear()
+        return output.toString()
+    }
+
+    private fun runDeltaCommand(command: String, message: String, logfile: String) {
+        val output = StringBuilder()
+
+        // Get the Application Context
+        val context = getApplicationContext()
+
+        // Get the nativeLibraryDir (might not be suitable for this case)
+        val applicationInfo = context.applicationInfo
+        val WorkingDir = applicationInfo.nativeLibraryDir
+        val deltaConfigFile = File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg")
+
+        val progressDialog = ProgressDialog(this)
+        progressDialog.setMessage(message) // Set the message
+        progressDialog.setCancelable(false) // Set cancelable to false
+        progressDialog.show() // Show the ProgressDialog
+
+        // Execute the command in a separate thread
+        Thread {
+            val output = shellExec(command, WorkingDir)
+            File(logfile).writeText(output)
+            runOnUiThread {
+                progressDialog.dismiss()
+            }
+        }.start()
+    }
+
+    private fun runGroundcoverify() {
+        val grassIds = "grass|kelp|lilypad|fern|thirrlily|spartium|in_cave_plant|reedgroup"
+        val excludeIds = "refernce|infernace|planter|_furn_|_skelp|t_glb_var_skeleton|cliffgrass|terr|grassplane|flora_s_m_10_grass|cave_mud_rocks_fern|ab_in_cavemold|rp_mh_rock|ex_cave_grass00|secret_fern"
+        val ids_expr = "^(?!.*($excludeIds).*).*($grassIds).*$"
+        val exteriorCellRegex = "^[0-9\\-]+x[0-9\\-]+$"
+
+        val command = "./libdelta_plugin.so -v --verbose -c " +
+            Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg filter --all --output " +
+            Constants.USER_FILE_STORAGE + "/launcher/delta/output_groundcover.omwaddon --desc \"Generated groundcover plugin from your local cavebros\" match Cell --cellref-object-id \"$ids_expr\" --id \"$exteriorCellRegex\" match Static --id \"$ids_expr\" --modify model \"^\" \"grass\\\\\"" +
+            " && " +
+            "./libdelta_plugin.so -v --verbose -c " + Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg filter --all --output " + Constants.USER_FILE_STORAGE + "/launcher/delta/output_deleted.omwaddon match Cell --cellref-object-id \"$ids_expr\" --id \"$exteriorCellRegex\" --delete" +
+            " && " +
+            "./libdelta_plugin.so -v --verbose -c " + Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg query --input " + Constants.USER_FILE_STORAGE + "/launcher/delta/output_groundcover.omwaddon --ignore " + Constants.USER_FILE_STORAGE + "/launcher/delta/deleted_groundcover.omwaddon match Static"
+
+        // Get the Application Context
+        val context = getApplicationContext()
+
+        // Get the nativeLibraryDir (might not be suitable for this case)
+        val applicationInfo = context.applicationInfo
+        val WorkingDir = applicationInfo.nativeLibraryDir
+
+        val progressDialog = ProgressDialog(this)
+        progressDialog.setMessage("Running Groundcoverify...") // Set the message
+        progressDialog.setCancelable(false) // Set cancelable to false
+        progressDialog.show() // Show the ProgressDialog
+
+        Thread {
+            val output = shellExec(command.toString(), WorkingDir)
+            val outputlines = output.split("\n")
+            val modelLines = outputlines.filter { it.trim().startsWith("model:") }
+            val paths = modelLines.map { it.substringAfter("model: \"grass").replace("\\\\", "/").trim().replace("\"", "") }
+            File(Constants.USER_FILE_STORAGE + "/launcher/delta/groundcoverify.log").writeText(output)
+
+            File(Constants.USER_FILE_STORAGE + "/launcher/delta/paths.log").writeText(paths.toString())
+            paths.forEach { path ->
+                val filename = path.substringAfterLast("/")
+                val correctedPath = path.substringBeforeLast("/").trim()
+
+                val command2 = "mkdir -p " + Constants.USER_FILE_STORAGE + "/launcher/delta/Meshes/grass/$correctedPath" +
+                    " && " +
+                    "./libdelta_plugin.so -v --verbose -c " +
+                    Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg vfs-extract \"Meshes$correctedPath/$filename\" " +
+                    Constants.USER_FILE_STORAGE + "/launcher/delta/Meshes/grass/$correctedPath/$filename"
+
+                shellExec(command2.toString(), WorkingDir)
+            }
+
+            runOnUiThread {
+                progressDialog.dismiss()
+            }
+
+        }.start()
+    }
+
+    private fun enableDeltaPlugin() {
+        val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+        lines.removeAll { 
+            it.contains("delta-merged.omwaddon") 
+        }
+        lines.add("content=delta-merged.omwaddon")
+        File(Constants.USER_CONFIG + "/openmw.cfg").writeText(lines.joinToString("\n"))
+    }
+
+    private fun disableDeltaPlugin() {
+        val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+        lines.removeAll { 
+            it.contains("content=delta-merged.omwaddon") 
+        }
+        File(Constants.USER_CONFIG + "/openmw.cfg").writeText(lines.joinToString("\n"))
+    }
+
+    private fun enableGroundcoverify() {
+        val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+        lines.removeAll { 
+            it.contains("groundcover=output_groundcover.omwaddon") || it.contains("content=output_deleted.omwaddon") 
+        }
+        lines.add("content=output_deleted.omwaddon")
+        lines.add("groundcover=output_groundcover.omwaddon")
+        File(Constants.USER_CONFIG + "/openmw.cfg").writeText(lines.joinToString("\n"))
+    }
+
+    private fun disableGroundcoverify() {
+        val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+        lines.removeAll { 
+            it.contains("groundcover=output_groundcover.omwaddon") || it.contains("content=output_deleted.omwaddon") 
+        }
+        File(Constants.USER_CONFIG + "/openmw.cfg").writeText(lines.joinToString("\n"))
+    }
+
     /**
      * Makes the "back" icon in the actionbar perform the back operation
      */
@@ -313,6 +544,117 @@ class ModsActivity : AppCompatActivity() {
                 true
             }
 
+            R.id.action_tools_delta_merge -> {
+                val command = "./libdelta_plugin.so -v --verbose -c " + 
+                    Constants.USER_FILE_STORAGE + "/launcher/delta/delta.cfg merge --skip-cells " + 
+                    Constants.USER_FILE_STORAGE + "/launcher/delta/delta-merged.omwaddon"
+
+                var isGenerated = false
+                var isEnabled = false
+                if (File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta-merged.omwaddon").exists())
+                    isGenerated = true
+
+                val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+                lines.forEach { 
+                    if (it.contains("content=delta-merged.omwaddon"))
+                        isEnabled = true
+                }
+
+
+                var oldHash = ""
+                if (File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta.hash").exists())
+                    oldHash = File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta.hash").readText()
+                val newHash = generateDeltaCfg().hashCode().toString()
+
+                var message = "Delta plugin is "
+                if (!isGenerated) message += "not generated."
+                else if (!isEnabled) message += "disabled."
+                else message += "enabled."
+
+                if (isGenerated && oldHash != newHash)
+                    message += "\nBut may be outdated"
+                else if (isGenerated)
+                    message += "\nAnd is up to date."
+            
+                AlertDialog.Builder(this)
+                    .setTitle("Groundcoverify")
+                    .setMessage(message)
+                    .setNeutralButton(if (isGenerated) "Re-Generate" else "Generate") { _, _ ->
+                        File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta.hash").writeText(newHash)
+                        disableDeltaPlugin()
+                        runDeltaCommand(command, "Running Delta Plugin...", Constants.USER_FILE_STORAGE + "/launcher/delta/delta.log")
+                        enableDeltaPlugin()
+
+                    }
+                    .setPositiveButton("Cancel") { _, _ ->
+                    }
+                    .setNegativeButton(if (!isGenerated) "" else if (isEnabled) "Disable" else "Enable") { _, _ ->
+                        if (isGenerated) {
+                            if (!isEnabled)
+                                enableDeltaPlugin()
+                            else
+                                disableDeltaPlugin()
+                        }
+                    }
+                    .show()
+
+                true
+            }
+
+            R.id.action_tools_groundcoverify -> {
+
+                var isGenerated = false
+                var isEnabled = false
+                if (File(Constants.USER_FILE_STORAGE + "/launcher/delta/output_deleted.omwaddon").exists() &&
+                    File(Constants.USER_FILE_STORAGE + "/launcher/delta/output_groundcover.omwaddon").exists())
+                    isGenerated = true
+
+                val lines = File(Constants.USER_CONFIG + "/openmw.cfg").readLines().toMutableList()
+                lines.forEach { 
+                    if (it.contains("groundcover=output_groundcover.omwaddon"))
+                        isEnabled = true
+                }
+
+                var oldHash = ""
+                if (File(Constants.USER_FILE_STORAGE + "/launcher/delta/groundcoverify.hash").exists())
+                    oldHash = File(Constants.USER_FILE_STORAGE + "/launcher/delta/groundcoverify.hash").readText()
+                val newHash = generateDeltaCfg().hashCode().toString()
+
+                var message = "Groundcoverify is "
+                if (!isGenerated) message += "not generated."
+                else if (!isEnabled) message += "disabled."
+                else message += "enabled."
+
+                if (isGenerated && oldHash != newHash)
+                    message += "\nBut may be outdated"
+                else if (isGenerated)
+                    message += "\nAnd is up to date."
+
+           
+                AlertDialog.Builder(this)
+                    .setTitle("Groundcoverify")
+                    .setMessage(message)
+                    .setNeutralButton(if (isGenerated) "Re-Generate" else "Generate") { _, _ ->
+                        File(Constants.USER_FILE_STORAGE + "/launcher/delta/groundcoverify.hash").writeText(newHash)
+                        disableGroundcoverify()
+                        runGroundcoverify()
+                        enableGroundcoverify()
+
+                    }
+                    .setPositiveButton("Cancel") { _, _ ->
+                    }
+                    .setNegativeButton(if (!isGenerated) "" else if (isEnabled) "Disable" else "Enable") { _, _ ->
+                        if (isGenerated) {
+                            if (!isEnabled)
+                                enableGroundcoverify()
+                            else
+                                disableGroundcoverify()
+                        }
+                    }
+                    .show()
+
+                true
+            }
             else -> super.onOptionsItemSelected(item)
         }
     }

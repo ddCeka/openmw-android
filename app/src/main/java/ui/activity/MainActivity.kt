@@ -101,6 +101,8 @@ class MainActivity : AppCompatActivity() {
         // create user dirs
         File(Constants.USER_CONFIG).mkdirs()
         File(Constants.USER_FILE_STORAGE + "/launcher/icons").mkdirs()
+        if (!File(Constants.USER_OPENMW_CFG).exists())
+            File(Constants.USER_OPENMW_CFG).writeText("# This is the user openmw.cfg. Feel free to modify it as you wish.\n")
 
         // create icons files hint
         if (!File(Constants.USER_FILE_STORAGE + "/launcher/icons/paste custom icons here.txt").exists())
@@ -345,6 +347,9 @@ class MainActivity : AppCompatActivity() {
                 .filter { it.enabled }
                 .forEach { output += "groundcover=${it.filename}\n" }
 
+            // force add delta data dir
+            output += "data=" + '"' + Constants.USER_FILE_STORAGE + "launcher/delta" + '"' + "\n" 
+
             // write everything to openmw.cfg
             File(Constants.OPENMW_CFG).writeText(output)
         } catch (e: IOException) {
@@ -384,11 +389,6 @@ class MainActivity : AppCompatActivity() {
         assetCopier.copy("libopenmw/resources", Constants.RESOURCES)
         assetCopier.copy("libopenmw/openmw", Constants.GLOBAL_CONFIG)
 
-        // set up user config (if not present)
-        File(Constants.USER_CONFIG).mkdirs()
-        if (!File(Constants.USER_OPENMW_CFG).exists())
-            File(Constants.USER_OPENMW_CFG).writeText("# This is the user openmw.cfg. Feel free to modify it as you wish.\n")
-
         // set version stamp
         File(Constants.VERSION_STAMP).writeText(BuildConfig.VERSION_CODE.toString())
     }
@@ -410,6 +410,7 @@ class MainActivity : AppCompatActivity() {
     private fun removeUserConfig() {
         deleteRecursive(File(Constants.USER_CONFIG))
         File(Constants.USER_CONFIG).mkdirs()
+        File(Constants.USER_OPENMW_CFG).writeText("# This is the user openmw.cfg. Feel free to modify it as you wish.\n")
     }
 
     /**

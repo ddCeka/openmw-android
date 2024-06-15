@@ -181,6 +181,9 @@ mkdir -p ../app/src/main/jniLibs/$ABI/
 # libopenmw.so is a special case
 find build/$ARCH/openmw-prefix/ -iname "libopenmw.so" -exec cp "{}" ../app/src/main/jniLibs/$ABI/libopenmw.so \;
 
+# copy delta_plugin to lib location
+cp tool/libdelta_plugin.so ../app/src/main/jniLibs/$ABI/
+
 # copy over libs we compiled
 cp prefix/$ARCH/lib/{libopenal,libSDL2,libhidapi,libGL,libcollada-dom2.5-dp}.so ../app/src/main/jniLibs/$ABI/
 
