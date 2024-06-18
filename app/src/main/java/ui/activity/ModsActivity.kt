@@ -240,7 +240,7 @@ class ModsActivity : AppCompatActivity() {
         val groundcovers = ModsCollection(ModType.Groundcover, dataFilesList, db)
 
         // generate final output.cfg
-        var output = "data=" + gamePath + "/Data Files\n"
+        var output = "data=" + '"' + gamePath + "/Data Files" + '"' + "\n"
 
         try {
             // output resources
@@ -319,7 +319,6 @@ class ModsActivity : AppCompatActivity() {
 
         }
 
-//        findViewById<EditText>(R.id.command_input).text.clear()
         return output.toString()
     }
 
@@ -571,13 +570,13 @@ class ModsActivity : AppCompatActivity() {
                 else if (!isEnabled) message += "disabled."
                 else message += "enabled."
 
-                if (isGenerated && oldHash != newHash)
-                    message += "\nBut may be outdated"
-                else if (isGenerated)
-                    message += "\nAnd is up to date."
+                if (isGenerated && oldHash != newHash && isEnabled)
+                    message += "\n\nAnd may be outdated!"
+                else if (isGenerated && isEnabled)
+                    message += "\n\nAnd is up to date."
             
                 AlertDialog.Builder(this)
-                    .setTitle("Groundcoverify")
+                    .setTitle("Delta Merge")
                     .setMessage(message)
                     .setNeutralButton(if (isGenerated) "Re-Generate" else "Generate") { _, _ ->
                         File(Constants.USER_FILE_STORAGE + "/launcher/delta/delta.hash").writeText(newHash)
@@ -621,14 +620,14 @@ class ModsActivity : AppCompatActivity() {
                 val newHash = generateDeltaCfg().hashCode().toString()
 
                 var message = "Groundcoverify is "
-                if (!isGenerated) message += "not generated."
+                if (!isGenerated) message += "not generated!"
                 else if (!isEnabled) message += "disabled."
                 else message += "enabled."
 
-                if (isGenerated && oldHash != newHash)
-                    message += "\nBut may be outdated"
-                else if (isGenerated)
-                    message += "\nAnd is up to date."
+                if (isGenerated && oldHash != newHash && isEnabled)
+                    message += "\n\nAnd may be outdated."
+                else if (isGenerated && isEnabled)
+                    message += "\n\nAnd is up to date."
 
            
                 AlertDialog.Builder(this)
