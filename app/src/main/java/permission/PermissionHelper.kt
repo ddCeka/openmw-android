@@ -36,6 +36,10 @@ object PermissionHelper {
                     ActivityCompat.requestPermissions(activity,
                         arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE), 23
                     )
+                // wait till granted or freeze infinitelly
+                while (ContextCompat.checkSelfPermission(activity,
+                        Manifest.permission.WRITE_EXTERNAL_STORAGE) != PackageManager.PERMISSION_GRANTED)
+                    Thread.sleep(50)      
                 }
             }
         }
