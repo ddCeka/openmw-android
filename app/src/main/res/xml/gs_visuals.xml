@@ -74,6 +74,11 @@
             android:title="Bump/Reflect Map Local Lighting"
             android:summary="Normally environment map reflections aren't affected by lighting, which makes environment-mapped (and thus bump-mapped objects) glow in the dark. Morrowind Code Patch includes an option to remedy that by doing environment-mapping before applying lighting, this is the equivalent of that option. Affected objects will use shaders."/>
 
+        <CheckBoxPreference
+            android:key="gs_weather_particle_occlusion"
+            android:title="Weather Particle Occlusion"
+            android:summary="EXPERIMENTAL: Stop rain and snow from falling through overhangs and roofs."/>
+
 <!--
         <CheckBoxPreference
             android:key="gs_soft_particles"

@@ -540,7 +540,6 @@ class MainActivity : AppCompatActivity() {
         }
 
 	// Game Mechanics
-	writeSetting("Game", "toggle sneak", if(prefs.getBoolean("gs_toggle_sneak", true)) "true" else "false")
 	writeSetting("Game", "uncapped damage fatigue", if(prefs.getBoolean("gs_uncapped_damage_fatigue", false)) "true" else "false")
 
 	writeSetting("Game", "rebalance soul gem values", if(prefs.getBoolean("gs_soulgem_values_rebalance", false)) "true" else "false")
@@ -571,6 +570,7 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Shaders", "auto use terrain normal maps", if(prefs.getBoolean("gs_auto_use_terrain_normal_maps", false)) "true" else "false")
 	writeSetting("Shaders", "auto use terrain specular maps", if(prefs.getBoolean("gs_auto_use_terrain_specular_maps", false)) "true" else "false")
 	writeSetting("Shaders", "apply lighting to environment maps", if(prefs.getBoolean("gs_bump_map_local_lighting", false)) "true" else "false")
+	writeSetting("Shaders", "weather particle occlusion", if(prefs.getBoolean("gs_weather_particle_occlusion", false)) "true" else "false")
 
 	// Visuals fog
 	writeSetting("Fog", "radial fog", if(prefs.getBoolean("gs_radial_fog", false)) "true" else "false")
@@ -603,6 +603,7 @@ class MainActivity : AppCompatActivity() {
         }
 
 	// Animations
+	writeSetting("Game", "player movement ignores animation", if(prefs.getBoolean("gs_player_movement_ignores_animation", false)) "true" else "false")
 	writeSetting("Game", "use magic item animations", if(prefs.getBoolean("gs_use_magic_item_animation", false)) "true" else "false")
 	writeSetting("Game", "use additional anim sources", if(prefs.getBoolean("gs_use_additional_animation_sources", false)) "true" else "false")
 	writeSetting("Game", "weapon sheathing", if(prefs.getBoolean("gs_weapon_sheating", false)) "true" else "false")
@@ -610,6 +611,7 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Game", "graphic herbalism", if(prefs.getBoolean("gs_enable_graphics_herbalism", true)) "true" else "false")
 	writeSetting("Game", "smooth movement", if(prefs.getBoolean("gs_smooth_movement", false)) "true" else "false")
 	writeSetting("Game", "turn to movement direction", if(prefs.getBoolean("gs_turn_to_movement_direction", false)) "true" else "false")
+	writeSetting("Game", "smooth animation transitions", if(prefs.getBoolean("gs_smooth_animation_transitions", false)) "true" else "false")
 
 	// Interface
 	writeSetting("Game", "show owned", prefs.getString("gs_show_owned", "0").toString())

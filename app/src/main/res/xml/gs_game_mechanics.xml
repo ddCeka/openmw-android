@@ -2,12 +2,6 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <CheckBoxPreference
-        android:key="gs_toggle_sneak"
-        android:title="Toggle Sneak"
-        android:defaultValue="true"
-        android:summary="This setting causes the behavior of the sneak key (bound to Ctrl by default) to toggle sneaking on and off rather than requiring the key to be held down while sneaking. Players that spend significant time sneaking may find the character easier to control with this option enabled."/>
-
-    <CheckBoxPreference
         android:key="gs_uncapped_damage_fatigue"
         android:title="Uncapped Damage Fatigue"
         android:summary="Make Damage Fatigue magic effect uncapped like Drain Fatigue effect. This means that unlike Morrowind you will be able to knock down actors using this effect."/>

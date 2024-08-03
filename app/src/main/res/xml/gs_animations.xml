@@ -2,6 +2,10 @@
 <PreferenceScreen xmlns:android="http://schemas.android.com/apk/res/android">
 
     <PreferenceCategory android:title="Animations">
+        <CheckBoxPreference
+            android:key="gs_player_movement_ignores_animation"
+            android:title="Player Movement Ignores Animation"
+            android:summary="In third person, the camera will sway along with the movement animations of the player. Enabling this option disables this swaying by having the player character move independently of its animation. This was the default behavior of OpenMW 0.48 and earlier."/>
 
         <CheckBoxPreference
             android:key="gs_use_magic_item_animation"
@@ -39,5 +43,10 @@
             android:title="Turn to Movement Direction"
             android:summary="Affects side and diagonal movement. Enabling this setting makes movement more realistic. If disabled then the whole character's body is pointed to the direction of view. Diagonal movement has no special animation and causes sliding. If enabled then the character turns lower body to the direction of movement. Upper body is turned partially. Head is always pointed to the direction of view. In combat mode it works only for diagonal movement. In non-combat mode it changes straight right and straight left movement as well. Also turns the whole body up or down when swimming according to the movement direction."/>
 
+        <CheckBoxPreference
+            android:key="gs_smooth_animation_transitions"
+            android:title="Smooth Animation Transitions"
+            android:summary="If enabled - makes transitions between different animations/poses much smoother. Also allows to load animation blending config YAML files that can be bundled with animations in order to customise blending styles."/>
     </PreferenceCategory>
+
 </PreferenceScreen>
