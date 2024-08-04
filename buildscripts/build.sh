@@ -10,6 +10,7 @@ ASAN="false"
 DEPLOY_RESOURCES="true"
 LTO="false"
 BUILD_TYPE="release"
+GH_ACTIONS_BUILD="false"
 CFLAGS="-fPIC"
 CXXFLAGS="-fPIC -frtti -fexceptions"
 LDFLAGS="-Wl,--undefined-version"
@@ -62,6 +63,10 @@ while [[ $# -gt 0 ]]; do
 			;;
 		--no-resources)
 			DEPLOY_RESOURCES="false"
+			shift
+			;;
+   		--gh_actions_build)
+			GH_ACTIONS_BUILD="true"
 			shift
 			;;
 		*)
@@ -235,5 +240,10 @@ fi
 
 # gradle should do it, but just in case...
 llvm-strip ../app/src/main/jniLibs/$ABI/*.so
+
+if [ $GH_ACTIONS_BUILD = true ]; then
+    rm -r ./build
+    rm -r ./downloads
+fi
 
 echo "==> Success"
