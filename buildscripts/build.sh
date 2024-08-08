@@ -244,6 +244,7 @@ llvm-strip ../app/src/main/jniLibs/$ABI/*.so
 if [ $GH_ACTIONS_BUILD = true ]; then
     rm -r ./build
     rm -r ./downloads
+    rm -r ./toolchain
 fi
 
 echo "==> Success"
