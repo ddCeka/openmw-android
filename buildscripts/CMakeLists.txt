@@ -37,7 +37,7 @@ set(MYGUI_VERSION 3.4.3)
 set(MYGUI_HASH SHA256=d1d5f294670ae71f7200ed4b30859018281d8cfd45d6a38d18b97a4aba604c42)
 
 # https://github.com/sisah2/gl4es/releases
-set(GL4ES_VERSION 238eb8f698323eea0de5b1b41fa607112a6fdb8b)
+set(GL4ES_VERSION 58485783b40d55f62b0b8a16e202a544683af7e8)
 set(GL4ES_HASH SHA256=b565e717c7d192e936bda25f3cb90ad8db398af56414ec08294b6716574c1a6d)
 
 # https://github.com/openscenegraph/OpenSceneGraph/releases
