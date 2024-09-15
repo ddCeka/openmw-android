@@ -56,7 +56,7 @@ set(LIBICU_VERSION 70-1)
 set(LIBICU_HASH SHA256=4013d7aff8a34bae410664bdb16554d7eda03654b22627b9284ab55a685492d4)
 
 # https://github.com/OpenMW/openmw/commits/master
-set(OPENMW_VERSION d66062f028fffdd86e2ecd471994b79b7bf3bd5f)
+set(OPENMW_VERSION 9c9dede49b4478a47bc694c7fecbd15f3f9e831f)
 set(OPENMW_HASH SHA256=44d044ad0a5546216fe611fe92c37065bb07e2efeeeaac4f049dae03df313186)
 
 # End of configurable options
@@ -289,34 +289,34 @@ ExternalProject_Add(sdl2
 	URL_HASH ${SDL2_HASH}
 	DOWNLOAD_DIR ${download_dir}
 
-#	PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-android-120hz-gyroscope.patch
-#	COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-disable-declaration-after-statement-warning.patch
-
-#	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
-#	${COMMON_CMAKE_ARGS}
-#        -DSDL_STATIC=OFF
-#        -DHAVE_GCC_FVISIBILITY=OFF
-
-#	BUILD_COMMAND ${wrapper_command} $(MAKE)
-
-#	INSTALL_COMMAND ${wrapper_command} $(MAKE) install
-
-#	COMMAND cp libSDL2.so ${prefix}/lib/
-#	COMMAND cp libhidapi.so ${prefix}/lib/
-#	COMMAND cp -r <SOURCE_DIR>/include ${prefix}/
-
 	PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-android-120hz-gyroscope.patch
-	COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-disable-gamma-warning.patch
+	COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-disable-declaration-after-statement-warning.patch
 
-	CONFIGURE_COMMAND ""
+	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
+	${COMMON_CMAKE_ARGS}
+        -DSDL_STATIC=OFF
+        -DHAVE_GCC_FVISIBILITY=OFF
 
-	BUILD_COMMAND ${wrapper_command} ndk-build
-	${COMMON_NDK_BUILD_FLAGS}
+	BUILD_COMMAND ${wrapper_command} $(MAKE)
 
-	INSTALL_COMMAND mkdir -p ${prefix}/lib/
-	COMMAND cp libs/${app_abi}/libSDL2.so ${prefix}/lib/
-	COMMAND cp libs/${app_abi}/libhidapi.so ${prefix}/lib/
+	INSTALL_COMMAND ${wrapper_command} $(MAKE) install
+
+	COMMAND cp libSDL2.so ${prefix}/lib/
+	COMMAND cp libhidapi.so ${prefix}/lib/
 	COMMAND cp -r <SOURCE_DIR>/include ${prefix}/
+
+#	PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-android-120hz-gyroscope.patch
+#	COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-disable-gamma-warning.patch
+
+#	CONFIGURE_COMMAND ""
+
+#	BUILD_COMMAND ${wrapper_command} ndk-build
+#	${COMMON_NDK_BUILD_FLAGS}
+
+#	INSTALL_COMMAND mkdir -p ${prefix}/lib/
+#	COMMAND cp libs/${app_abi}/libSDL2.so ${prefix}/lib/
+#	COMMAND cp libs/${app_abi}/libhidapi.so ${prefix}/lib/
+#	COMMAND cp -r <SOURCE_DIR>/include ${prefix}/
 )
 
 ExternalProject_Add(bullet
