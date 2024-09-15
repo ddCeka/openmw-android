@@ -56,7 +56,7 @@ set(LIBICU_VERSION 70-1)
 set(LIBICU_HASH SHA256=4013d7aff8a34bae410664bdb16554d7eda03654b22627b9284ab55a685492d4)
 
 # https://github.com/OpenMW/openmw/commits/master
-set(OPENMW_VERSION 419e168a8b15a2a18ffb8f2fe8d5b48f251f244a)
+set(OPENMW_VERSION d66062f028fffdd86e2ecd471994b79b7bf3bd5f)
 set(OPENMW_HASH SHA256=44d044ad0a5546216fe611fe92c37065bb07e2efeeeaac4f049dae03df313186)
 
 # End of configurable options
@@ -219,42 +219,27 @@ ExternalProject_Add(openal
 )
 
 ExternalProject_Add(boost
-	URL https://github.com/boostorg/boost/releases/download/boost-1.83.0/boost-1.83.0.tar.gz
+	URL https://github.com/boostorg/boost/releases/download/boost-1.86.0/boost-1.86.0-cmake.tar.gz
 	#URL_HASH ${BOOST_HASH}
 	DOWNLOAD_DIR ${download_dir}
 
-	BUILD_IN_SOURCE 1
+#        BUILD_IN_SOURCE 1
 
-	CONFIGURE_COMMAND ${wrapper_command} <SOURCE_DIR>/bootstrap.sh
-	--prefix=${prefix}
+	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
+	${COMMON_CMAKE_ARGS}
 
-	BUILD_COMMAND ""
+#FIXME: Doesnt work for some reason, need to compile everything :(, need newer cmake version?
+#	-DBOOST_INCLUDE_LIBRARIES=filesystem;program_options;iostreams
+#        -DBOOST_RUNTIME_LINK=static
+	-DBOOST_EXCLUDE_LIBRARIES=process
 
-	INSTALL_COMMAND ${wrapper_command} ./b2
-	-j4
-	--with-filesystem
-	--with-program_options
-	--with-system
-	--with-iostreams
-	--with-regex
-	--ignore-site-config
-	toolset=clang
-	architecture=${BOOST_ARCH}
-	address-model=${BOOST_ADDRESS_MODEL}
-	cflags=$ENV{CFLAGS}
-	cxxflags=$ENV{CXXFLAGS}
-	variant=release
-	target-os=android
-	threading=multi
-	threadapi=pthread
-	link=static
-	runtime-link=static
-	install
+	BUILD_COMMAND ${wrapper_command} $(MAKE)
+
+	INSTALL_COMMAND ${wrapper_command} $(MAKE) install
+
 	COMMAND llvm-ranlib ${prefix}/lib/libboost_filesystem.a
 	COMMAND llvm-ranlib ${prefix}/lib/libboost_program_options.a
-	COMMAND llvm-ranlib ${prefix}/lib/libboost_system.a
 	COMMAND llvm-ranlib ${prefix}/lib/libboost_iostreams.a
-	COMMAND llvm-ranlib ${prefix}/lib/libboost_regex.a
 )
 
 ExternalProject_Add(ffmpeg
@@ -304,6 +289,22 @@ ExternalProject_Add(sdl2
 	URL_HASH ${SDL2_HASH}
 	DOWNLOAD_DIR ${download_dir}
 
+#	PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-android-120hz-gyroscope.patch
+#	COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-disable-declaration-after-statement-warning.patch
+
+#	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
+#	${COMMON_CMAKE_ARGS}
+#        -DSDL_STATIC=OFF
+#        -DHAVE_GCC_FVISIBILITY=OFF
+
+#	BUILD_COMMAND ${wrapper_command} $(MAKE)
+
+#	INSTALL_COMMAND ${wrapper_command} $(MAKE) install
+
+#	COMMAND cp libSDL2.so ${prefix}/lib/
+#	COMMAND cp libhidapi.so ${prefix}/lib/
+#	COMMAND cp -r <SOURCE_DIR>/include ${prefix}/
+
 	PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-android-120hz-gyroscope.patch
 	COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/sdl2-disable-gamma-warning.patch
 
@@ -344,12 +345,6 @@ ExternalProject_Add(gl4es
 	URL https://github.com/sisah2/gl4es/archive/${GL4ES_VERSION}.tar.gz
 	#URL_HASH ${GL4ES_HASH}
 	DOWNLOAD_DIR ${download_dir}
-
-	#PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/gl4es/shared-library.patch-1.1.4
-	#COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/gl4es/gamma.patch
-	#COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/gl4es/disable-shader-hacks.patch
-	#COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/gl4es/psa.patch
-	#COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/gl4es/highp-fog.patch
 
 	CONFIGURE_COMMAND ""
 
@@ -470,7 +465,7 @@ ExternalProject_Add(libxml
 set(LIBCOLLADA_PATCH patch -d <SOURCE_DIR> -p0 -t -N < ${CMAKE_SOURCE_DIR}/patches/libcollada-minizip-fix.patch)
 
 ExternalProject_Add(libcollada
-	DEPENDS libxml boost
+	DEPENDS libxml
 
 	URL https://github.com/rdiankov/collada-dom/archive/v2.5.0.tar.gz
 	URL_HASH SHA256=3be672407a7aef60b64ce4b39704b32816b0b28f61ebffd4fbd02c8012901e0d
@@ -480,13 +475,13 @@ ExternalProject_Add(libcollada
 
 	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
 	${COMMON_CMAKE_ARGS}
-	-DBoost_USE_STATIC_LIBS=ON
-	-DBoost_USE_STATIC_RUNTIME=ON
-	-DBoost_NO_SYSTEM_PATHS=ON
-	-DBoost_INCLUDE_DIR=${prefix}/include
+#	-DBoost_USE_STATIC_LIBS=ON
+#	-DBoost_USE_STATIC_RUNTIME=ON
+#	-DBoost_NO_SYSTEM_PATHS=OFF
+#	-DBoost_INCLUDE_DIR=${prefix}/include
 	-DHAVE_STRTOQ=0
 	-DUSE_FILE32API=1
-	-DCMAKE_CXX_FLAGS=-std=gnu++11\ -I${prefix}/include/\ $ENV{CXXFLAGS}
+	-DCMAKE_CXX_FLAGS=-std=gnu++11\ -I${prefix}/include/boost/\ $ENV{CXXFLAGS}\ -DNO_BOOST\ -DNO_ZAE
  
 	BUILD_COMMAND ${wrapper_command} $(MAKE)
 
