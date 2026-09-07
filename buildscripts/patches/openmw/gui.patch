@@ -1,0 +1,69 @@
+diff --git a/components/myguiplatform/myguirendermanager.cpp b/components/myguiplatform/myguirendermanager.cpp
+index de54119189..1874a7a173 100644
+--- a/components/myguiplatform/myguirendermanager.cpp
++++ b/components/myguiplatform/myguirendermanager.cpp
+@@ -93,10 +93,11 @@ namespace MyGUIPlatform
+             state->apply();
+ 
+             state->disableAllVertexArrays();
+-            state->setClientActiveTextureUnit(0);
+-            glEnableClientState(GL_VERTEX_ARRAY);
+-            glEnableClientState(GL_TEXTURE_COORD_ARRAY);
+-            glEnableClientState(GL_COLOR_ARRAY);
++
++            // Enable attribute arrays for Position (0), Color (3), and TexCoord (8)
++            glEnableVertexAttribArray(0);
++            glEnableVertexAttribArray(2);
++            glEnableVertexAttribArray(3);
+ 
+             mReadFrom = (mReadFrom + 1) % sNumBuffers;
+             const std::vector<Batch>& vec = mBatchVector[mReadFrom];
+@@ -123,22 +121,21 @@ namespace MyGUIPlatform
+                 osg::GLBufferObject* bufferobject = state->isVertexBufferObjectSupported()
+                     ? vbo->getOrCreateGLBufferObject(state->getContextID())
+                     : nullptr;
++
+                 if (bufferobject)
+                 {
+                     state->bindVertexBufferObject(bufferobject);
+-
+-                    glVertexPointer(3, GL_FLOAT, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(0));
+-                    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(12));
+-                    glTexCoordPointer(2, GL_FLOAT, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(16));
++                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(0));
++                    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(12));
++                    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex), reinterpret_cast<char*>(16));
+                 }
+                 else
+                 {
+-                    glVertexPointer(3, GL_FLOAT, sizeof(MyGUI::Vertex),
+-                        reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()));
+-                    glColorPointer(4, GL_UNSIGNED_BYTE, sizeof(MyGUI::Vertex),
+-                        reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()) + 12);
+-                    glTexCoordPointer(2, GL_FLOAT, sizeof(MyGUI::Vertex),
+-                        reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer()) + 16);
++                    state->unbindVertexBufferObject();
++                    const char* data = reinterpret_cast<const char*>(vbo->getArray(0)->getDataPointer());
++                    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex), data);
++                    glVertexAttribPointer(2, 4, GL_UNSIGNED_BYTE, GL_TRUE, sizeof(MyGUI::Vertex), data + 12);
++                    glVertexAttribPointer(3, 2, GL_FLOAT, GL_FALSE, sizeof(MyGUI::Vertex), data + 16);
+                 }
+ 
+                 glDrawArrays(GL_TRIANGLES, 0, static_cast<GLsizei>(batch.mVertexCount));
+@@ -150,12 +147,11 @@ namespace MyGUIPlatform
+                 }
+             }
+ 
+-            glDisableClientState(GL_VERTEX_ARRAY);
+-            glDisableClientState(GL_TEXTURE_COORD_ARRAY);
+-            glDisableClientState(GL_COLOR_ARRAY);
++            glDisableVertexAttribArray(0);
++            glDisableVertexAttribArray(2);
++            glDisableVertexAttribArray(3);
+ 
+             state->popStateSet();
+-
+             state->unbindVertexBufferObject();
+             state->dirtyAllVertexArrays();
+             state->disableAllVertexArrays();
+

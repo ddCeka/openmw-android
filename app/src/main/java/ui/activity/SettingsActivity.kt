@@ -83,12 +83,6 @@ class FragmentGameSettings : PreferenceFragment() {
             true
         }
 
-        findPreference("game_settings_shadows").setOnPreferenceClickListener {
-            val intent = Intent(activity, Shadows_SettingsActivity::class.java)
-            this.startActivity(intent)
-            true
-        }
-
         findPreference("game_settings_animations").setOnPreferenceClickListener {
             val intent = Intent(activity, Animations_SettingsActivity::class.java)
             this.startActivity(intent)
@@ -189,7 +183,7 @@ class FragmentGameSettingsPage(val res: Int) : PreferenceFragment(), OnSharedPre
             egl.eglChooseConfig(eglDisplay, config, configs, 1, configsCount)
             return configs[0]!!
         }
-
+/*
         fun getExtensionList() {
             val egl = EGLContext.getEGL() as EGL10
             val eglDisplay = egl.eglGetDisplay(EGL_DEFAULT_DISPLAY)
@@ -209,23 +203,12 @@ class FragmentGameSettingsPage(val res: Int) : PreferenceFragment(), OnSharedPre
                 val prefs = PreferenceManager.getDefaultSharedPreferences(this.getActivity())
                 val enableANGLE = prefs!!.getBoolean("pref_use_angle", false)
 
-                if (extensions.contains("GL_EXT_depth_clamp") == false && !enableANGLE) {
-                    findPreference("gs_object_shadows").isEnabled = false
-                    findPreference("gs_terrain_shadows").isEnabled = false
-                    findPreference("gs_actor_shadows").isEnabled = false
-                    findPreference("gs_player_shadows").isEnabled = false
-                    findPreference("gs_indoor_shadows").isEnabled = false
-                    findPreference("gs_shadow_map_resolution").isEnabled = false
-                    findPreference("gs_shadow_computation_method").isEnabled = false
-                    findPreference("gs_shadows_distance").isEnabled = false
-                    findPreference("gs_shadows_fade_start").isEnabled = false
-                }
             }
             else Toast.makeText(this.getActivity(), "Cant check for extensions!, shadows setting wont be applyed!", Toast.LENGTH_SHORT).show()
         }
 
         if (res == R.xml.gs_shadows) getExtensionList()
-
+*/
         // what is this?
         //if (res == R.xml.gs_game_mechanics) findPreference("gs_always_allow_npc_to_follow_over_water_surface").isEnabled = preferenceScreen.sharedPreferences.getBoolean("gs_build_navmesh", true)
 
@@ -289,29 +272,6 @@ class Visuals_SettingsActivity : AppCompatActivity() {
         supportActionBar?.setDisplayHomeAsUpEnabled(true)
 
         fragmentManager.beginTransaction().replace(R.id.settings_frame, FragmentGameSettingsPage(R.xml.gs_visuals)).commit()
-    }
-
-    override fun onOptionsItemSelected(item: MenuItem): Boolean {
-        return when (item.itemId) {
-            android.R.id.home -> {
-                onBackPressed()
-                true
-            }
-            else -> super.onOptionsItemSelected(item)
-        }
-    }
-}
-
-class Shadows_SettingsActivity : AppCompatActivity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        setContentView(R.layout.activity_settings)
-
-        setSupportActionBar(findViewById(R.id.settings_toolbar))
-        supportActionBar?.setDisplayHomeAsUpEnabled(true)
-
-        fragmentManager.beginTransaction().replace(R.id.settings_frame, FragmentGameSettingsPage(R.xml.gs_shadows)).commit()
     }
 
     override fun onOptionsItemSelected(item: MenuItem): Boolean {
