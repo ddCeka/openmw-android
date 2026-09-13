@@ -551,7 +551,7 @@ index e69de29bb2..f15d35268a
 +        errc = 0;
 +
 +        Misc::StringUtils::replaceAll(essl, "#extension GL_EXT_clip_cull_distance : require", "");
-+
++        Misc::StringUtils::replaceAll(essl, "out float gl_ClipDistance", "//out float gl_ClipDistance");
 +        essl.insert(16, "#extension GL_OES_standard_derivatives : enable\n#extension GL_EXT_clip_cull_distance : enable\nprecision highp float;\nprecision highp int;\nprecision highp sampler2D;\nprecision highp sampler3D;\nprecision highp sampler2DShadow;\nprecision highp sampler2DArray;\nprecision highp image2D;\n");
 +
 +        return essl;

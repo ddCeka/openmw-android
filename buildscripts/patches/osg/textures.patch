@@ -169,7 +169,7 @@ index 75cb3b38e..bf0425419 100644
                                            image->getMipmapData(k));
  
 diff --git a/src/osg/Texture.cpp b/src/osg/Texture.cpp
-index 5978009fb..c70f85f3a 100644
+index 5978009fb..f01b45c39 100644
 --- a/src/osg/Texture.cpp
 +++ b/src/osg/Texture.cpp
 @@ -28,6 +28,8 @@
@@ -181,7 +181,7 @@ index 5978009fb..c70f85f3a 100644
  #ifndef GL_TEXTURE_WRAP_R
  #define GL_TEXTURE_WRAP_R                 0x8072
  #endif
-@@ -2486,6 +2488,59 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+@@ -2486,6 +2488,71 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
      bool useHardwareMipMapGeneration = mipmappingRequired && (!image->isMipmap() && isHardwareMipmapGenerationEnabled(state));
      bool useGluBuildMipMaps = mipmappingRequired && (!useHardwareMipMapGeneration && !image->isMipmap());
  
@@ -197,6 +197,7 @@ index 5978009fb..c70f85f3a 100644
 +    bool isS3TCSupported = S3TCSupported;
 +    bool isBPTCSupported = BPTCSupported;
 +    bool isRGTCSupported = RGTCSupported;
++
 +    if (forceSWDecompression) {
 +        isS3TCSupported = false;
 +        isBPTCSupported = false;
@@ -205,7 +206,9 @@ index 5978009fb..c70f85f3a 100644
 +
 +    GLenum internalFormat = _internalFormat;
 +    GLenum pixelFormat = (GLenum)image->getPixelFormat();
++    GLenum type = (GLenum)image->getDataType();
 +    bool needSWDecompression = false;
++    static const bool force16Bits = (getenv("NO16BITS") == nullptr);
 +
 +    if ((!isS3TCSupported &&
 +        (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT ||
@@ -218,9 +221,19 @@ index 5978009fb..c70f85f3a 100644
 +         _internalFormat == GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT))) {
 +
 +        switch (_internalFormat) {
-+            case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
-+                internalFormat = GL_RGB8;
-+                pixelFormat = GL_RGB;
++            case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
++            case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                if (force16Bits)
++                {
++                    internalFormat = (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? GL_RGB565 : GL_RGB5_A1;
++                    pixelFormat = (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? GL_RGB : GL_RGBA;
++                    type = (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? GL_UNSIGNED_SHORT_5_6_5 : GL_UNSIGNED_SHORT_5_5_5_1;
++                }
++                else
++                {
++                    internalFormat = GL_RGBA8;
++                    pixelFormat = GL_RGBA;
++                }
 +            } break;
 +            case GL_COMPRESSED_RED_GREEN_RGTC2_EXT:
 +            case GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT: {
@@ -233,7 +246,6 @@ index 5978009fb..c70f85f3a 100644
 +            }
 +        }
 +
-+        useHardwareMipMapGeneration = true;
 +        compressed_image = false;
 +        needSWDecompression = true;
 +    }
@@ -241,52 +253,264 @@ index 5978009fb..c70f85f3a 100644
      GLBufferObject* pbo = image->getOrCreateGLBufferObject(state.getContextID());
      if (pbo && !needImageRescale && !useGluBuildMipMaps)
      {
-@@ -2512,12 +2567,26 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+@@ -2511,13 +2578,64 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+         if ( !compressed_image)
          {
              numMipmapLevels = 1;
- 
--            glTexImage2D( target, 0, _internalFormat,
--                inwidth, inheight, _borderWidth,
--                (GLenum)image->getPixelFormat(),
--                (GLenum)image->getDataType(),
--                dataPtr);
++            unsigned char* decData;
++            if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                decData = new unsigned char[inwidth * inheight * 4];
++
 +            if (needSWDecompression)
 +            {
-+                unsigned char* decData = decompressBC(inwidth, inheight, _internalFormat, dataPtr);
- 
-+                glTexImage2D( target, 0, internalFormat,
-+                    inwidth, inheight, _borderWidth,
-+                    pixelFormat,
-+                    GL_UNSIGNED_BYTE,
-+                    decData);
++                decompressBC(inwidth, inheight, _internalFormat, dataPtr, decData);
 +
-+                delete[] decData;
++                if (force16Bits)
++                {
++                    switch (_internalFormat) {
++                        case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
++                            unsigned short* data16 = new unsigned short[inwidth * inheight];
++                            for (int i = 0; i < inwidth * inheight; i++) {
++                                data16[i] = ((decData[i * 4] >> 3) << 11) | ((decData[i * 4 + 1] >> 2) << 5) | (decData[i * 4 + 2] >> 3);
++                            }
++                            delete[] decData;
++                            decData = (unsigned char*) data16;
++                        } break;
++                        case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                            unsigned short* data16 = new unsigned short[inwidth * inheight];
++                            for (int i = 0; i < inwidth * inheight; i++) {
++                                data16[i] = (((decData[i * 4] >> 3) & 0x1F) << 11) | (((decData[i * 4 + 1] >> 3) & 0x1F) << 6) | (((decData[i * 4 + 2] >> 3) & 0x1F) << 1) | ((decData[i * 4 + 3] >> 7) & 0x01);
++                            }
++                            delete[] decData;
++                            decData = (unsigned char*) data16;
++                        } break;
++                    }
++
++                }
++
++                dataPtr = decData;
 +            }
-+            else
+ 
+-            glTexImage2D( target, 0, _internalFormat,
++            if (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA)
 +            {
-+                glTexImage2D( target, 0, _internalFormat,
-+                    inwidth, inheight, _borderWidth,
-+                    (GLenum)image->getPixelFormat(),
-+                    (GLenum)image->getDataType(),
-+                    dataPtr);
++                const int comps = (image->getPixelFormat() == GL_BGRA) ? 4 : 3;
++                pixelFormat = (image->getPixelFormat() == GL_BGRA) ? GL_RGBA :GL_RGB;
++
++                for (int i = 0; i < inwidth * inheight; i++)
++                {
++                    decData[i * comps] = dataPtr[i * comps + 2];
++                    decData[i * comps + 1] = dataPtr[i * comps + 1];
++                    decData[i * comps + 2] = dataPtr[i * comps];
++                    if (image->getPixelFormat() == GL_BGRA)
++                        decData[i * comps + 3] = dataPtr[i * comps + 3];
++                }
++                dataPtr = decData;
 +            }
++
++            glTexImage2D( target, 0, internalFormat,
+                 inwidth, inheight, _borderWidth,
+-                (GLenum)image->getPixelFormat(),
+-                (GLenum)image->getDataType(),
++                pixelFormat,
++                type,
+                 dataPtr);
+ 
++            if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                delete[] decData;
          }
          else if (extensions->isCompressedTexImage2DSupported())
          {
-@@ -2532,7 +2601,11 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+@@ -2532,7 +2650,11 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
                  dataPtr);
          }
  
 -        mipmapAfterTexImage(state, mipmapResult);
-+        // Dont use mipmap as it cant be generated
-+        if (compressed_image)
++        // Dont use mipmap as it cant be generated or is not needed 
++        if (compressed_image || !mipmappingRequired)
 +            glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0);
 +        else
 +            mipmapAfterTexImage(state, mipmapResult);
      }
      else
      {
-@@ -2814,6 +2887,55 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
+@@ -2549,6 +2671,8 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+ 
+             GLenum texStoragesizedInternalFormat = extensions->isTextureStorageEnabled && extensions->isTexStorage2DSupported() && (_borderWidth==0) ? selectSizedInternalFormat(image) : 0;
+ 
++            if (needSWDecompression) texStoragesizedInternalFormat = internalFormat;
++
+             if (texStoragesizedInternalFormat!=0)
+             {
+                 if (getTextureTarget()==GL_TEXTURE_CUBE_MAP)
+@@ -2566,7 +2690,16 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+ 
+                 if( !compressed_image )
+                 {
+-                    for( GLsizei k = 0 ; k < numMipmapLevels  && (width || height) ;k++)
++                    unsigned char* decData;
++                    unsigned short* data16;
++                    if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                        decData = new unsigned char[width * height * 4];
++                    if (force16Bits && needSWDecompression)
++                        data16 = new unsigned short[width * height];
++
++                    unsigned char* origDataPtr = dataPtr;
++
++                    for( GLsizei k = 0 ; k < numMipmapLevels && (width || height) ;k++)
+                     {
+ 
+                         if (width == 0)
+@@ -2574,16 +2707,62 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+                         if (height == 0)
+                             height = 1;
+ 
++                        dataPtr = origDataPtr + image->getMipmapOffset(k);
++
++                        if (needSWDecompression)
++                        {
++                            decompressBC(width, height, _internalFormat, dataPtr, decData);
++
++                            dataPtr = decData;
++
++                            if (force16Bits)
++                            {
++                                switch (_internalFormat) {
++                                    case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
++                                        for (int i = 0; i < width * height; i++)
++                                            data16[i] = ((decData[i * 4] >> 3) << 11) | ((decData[i * 4 + 1] >> 2) << 5) | (decData[i * 4 + 2] >> 3);
++                                        dataPtr = (unsigned char*) data16;
++                                    } break;
++                                    case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                                        for (int i = 0; i < width * height; i++)
++                                            data16[i] = (((decData[i * 4] >> 3) & 0x1F) << 11) | (((decData[i * 4 + 1] >> 3) & 0x1F) << 6) | (((decData[i * 4 + 2] >> 3) & 0x1F) << 1) | ((decData[i * 4 + 3] >> 7) & 0x01);
++                                        dataPtr = (unsigned char*) data16;
++                                    } break;
++                                }
++                            }
++                        }
++
++                        if (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA)
++                        {
++                            const int comps = (image->getPixelFormat() == GL_BGRA) ? 4 : 3;
++                            pixelFormat = (image->getPixelFormat() == GL_BGRA) ? GL_RGBA : GL_RGB;
++
++                            for (int i = 0; i < width * height; i++)
++                            {
++                                decData[i * comps] = dataPtr[i * comps + 2];
++                                decData[i * comps + 1] = dataPtr[i * comps + 1];
++                                decData[i * comps + 2] = dataPtr[i * comps];
++                                if (image->getPixelFormat() == GL_BGRA)
++                                    decData[i * comps + 3] = dataPtr[i * comps + 3];
++                            }
++                            dataPtr = decData;
++                        }
++
+                         glTexSubImage2D( target, k,
+                             0, 0,
+                             width, height,
+-                            (GLenum)image->getPixelFormat(),
+-                            (GLenum)image->getDataType(),
+-                            dataPtr + image->getMipmapOffset(k));
++                            pixelFormat,
++                            type,
++                            dataPtr);
+ 
+                         width >>= 1;
+                         height >>= 1;
+                     }
++
++                    if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                        delete[] decData;
++                    if (force16Bits && needSWDecompression)
++                        delete[] data16;
+                 }
+                 else if (extensions->isCompressedTexImage2DSupported())
+                 {
+@@ -2617,6 +2796,15 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+             {
+                 if( !compressed_image )
+                 {
++                    unsigned char* decData;
++                    unsigned short* data16;
++                    if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                        decData = new unsigned char[width * height * 4];
++                    if (force16Bits && needSWDecompression)
++                        data16 = new unsigned short[width * height];
++
++                    unsigned char* origDataPtr = dataPtr;
++
+                     for( GLsizei k = 0 ; k < numMipmapLevels  && (width || height) ;k++)
+                     {
+ 
+@@ -2625,15 +2813,61 @@ void Texture::applyTexImage2D_load(State& state, GLenum target, const Image* ima
+                         if (height == 0)
+                             height = 1;
+ 
+-                        glTexImage2D( target, k, _internalFormat,
+-                             width, height, _borderWidth,
+-                            (GLenum)image->getPixelFormat(),
+-                            (GLenum)image->getDataType(),
+-                            dataPtr + image->getMipmapOffset(k));
++                        dataPtr = origDataPtr + image->getMipmapOffset(k);
++
++                        if (needSWDecompression)
++                        {
++                            decompressBC(width, height, _internalFormat, dataPtr, decData);
++
++                            dataPtr = decData;
++
++                            if (force16Bits)
++                            {
++                                switch (_internalFormat) {
++                                    case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
++                                        for (int i = 0; i < width * height; i++)
++                                            data16[i] = ((decData[i * 4] >> 3) << 11) | ((decData[i * 4 + 1] >> 2) << 5) | (decData[i * 4 + 2] >> 3);
++                                        dataPtr = (unsigned char*) data16;
++                                    } break;
++                                    case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                                        for (int i = 0; i < width * height; i++)
++                                            data16[i] = (((decData[i * 4] >> 3) & 0x1F) << 11) | (((decData[i * 4 + 1] >> 3) & 0x1F) << 6) | (((decData[i * 4 + 2] >> 3) & 0x1F) << 1) | ((decData[i * 4 + 3] >> 7) & 0x01);
++                                        dataPtr = (unsigned char*) data16;
++                                    } break;
++                                }
++                            }
++                        }
++
++                        if (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA)
++                        {
++                            const int comps = (image->getPixelFormat() == GL_BGRA) ? 4 : 3;
++                            pixelFormat = (image->getPixelFormat() == GL_BGRA) ? GL_RGBA :GL_RGB;
++
++                            for (int i = 0; i < width * height; i++)
++                            {
++                                decData[i * comps] = dataPtr[i * comps + 2];
++                                decData[i * comps + 1] = dataPtr[i * comps + 1];
++                                decData[i * comps + 2] = dataPtr[i * comps];
++                                if (image->getPixelFormat() == GL_BGRA)
++                                    decData[i * comps + 3] = dataPtr[i * comps + 3];
++                            }
++                            dataPtr = decData;
++                        }
++
++                        glTexImage2D( target, k, internalFormat,
++                            width, height, _borderWidth,
++                            pixelFormat,
++                            type,
++                            dataPtr);
+ 
+                         width >>= 1;
+                         height >>= 1;
+                     }
++
++                    if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                        delete[] decData;
++                    if (force16Bits && needSWDecompression)
++                        delete[] data16;
+                 }
+                 else if (extensions->isCompressedTexImage2DSupported())
+                 {
+@@ -2814,6 +3048,64 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
      bool useHardwareMipMapGeneration = mipmappingRequired && (!image->isMipmap() && isHardwareMipmapGenerationEnabled(state));
      bool useGluBuildMipMaps = mipmappingRequired && (!useHardwareMipMapGeneration && !image->isMipmap());
  
@@ -309,7 +533,9 @@ index 5978009fb..c70f85f3a 100644
 +    }
 +
 +    GLenum pixelFormat = (GLenum)image->getPixelFormat();
++    GLenum type = (GLenum)image->getDataType();
 +    bool needSWDecompression = false;
++    static const bool force16Bits = (getenv("NO16BITS") == nullptr);
 +
 +    if ((!isS3TCSupported &&
 +        (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT ||
@@ -322,8 +548,16 @@ index 5978009fb..c70f85f3a 100644
 +         _internalFormat == GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT))) {
 +
 +        switch (_internalFormat) {
-+            case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
-+                pixelFormat = GL_RGB;
++            case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
++            case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                if (force16Bits)
++                {
++                    pixelFormat = (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? GL_RGB : GL_RGBA;
++                    type = (_internalFormat == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) ? GL_UNSIGNED_SHORT_5_6_5 : GL_UNSIGNED_SHORT_5_5_5_1;
++                }
++                else
++                    pixelFormat = GL_RGBA;
++
 +            } break;
 +            case GL_COMPRESSED_RED_GREEN_RGTC2_EXT:
 +            case GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT: {
@@ -334,7 +568,6 @@ index 5978009fb..c70f85f3a 100644
 +            }
 +        }
 +
-+        useHardwareMipMapGeneration = true;
 +        compressed_image = false;
 +        needSWDecompression = true;
 +    }
@@ -342,46 +575,176 @@ index 5978009fb..c70f85f3a 100644
      GLBufferObject* pbo = image->getOrCreateGLBufferObject(contextID);
      if (pbo && !needImageRescale && !useGluBuildMipMaps)
      {
-@@ -2838,12 +2960,28 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
+@@ -2838,12 +3130,65 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
  
          if (!compressed_image)
          {
--            glTexSubImage2D( target, 0,
--                0, 0,
--                inwidth, inheight,
--                (GLenum)image->getPixelFormat(),
--                (GLenum)image->getDataType(),
--                dataPtr);
++            unsigned char* decData;
++            if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                decData = new unsigned char[inwidth * inheight * 4];
++
 +            if (needSWDecompression)
 +            {
-+                unsigned char* decData = decompressBC(inwidth, inheight, _internalFormat, dataPtr);
++                decompressBC(inwidth, inheight, _internalFormat, dataPtr, decData);
 +
-+                glTexSubImage2D( target, 0,
-+                    0, 0,
-+                    inwidth, inheight,
-+                    pixelFormat,
-+                    GL_UNSIGNED_BYTE,
-+                    decData);
++                if (force16Bits)
++                {
++                    switch (_internalFormat) {
++                        case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
++                            unsigned short* data16 = new unsigned short[inwidth * inheight];
++                            for (int i = 0; i < inwidth * inheight; i++) {
++                                data16[i] = ((decData[i * 4] >> 3) << 11) | ((decData[i * 4 + 1] >> 2) << 5) | (decData[i * 4 + 2] >> 3);
++                            }
++                            delete[] decData;
++                            decData = (unsigned char*) data16;
++                        } break;
++                        case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                            unsigned short* data16 = new unsigned short[inwidth * inheight];
++                            for (int i = 0; i < inwidth * inheight; i++) {
++                                data16[i] = (((decData[i * 4] >> 3) & 0x1F) << 11) | (((decData[i * 4 + 1] >> 3) & 0x1F) << 6) | (((decData[i * 4 + 2] >> 3) & 0x1F) << 1) | ((decData[i * 4 + 3] >> 7) & 0x01);
++                            }
++                            delete[] decData;
++                            decData = (unsigned char*) data16;
++                        } break;
++                    }
 +
-+                delete[] decData;
++                }
++
++                dataPtr = decData;
 +            }
-+            else
++
++            if (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA)
 +            {
-+                glTexSubImage2D( target, 0,
-+                    0, 0,
-+                    inwidth, inheight,
-+                    (GLenum)image->getPixelFormat(),
-+                    (GLenum)image->getDataType(),
-+                    dataPtr);
++                const int comps = (image->getPixelFormat() == GL_BGRA) ? 4 : 3;
++                pixelFormat = (image->getPixelFormat() == GL_BGRA) ? GL_RGBA :GL_RGB;
++
++                for (int i = 0; i < inwidth * inheight; i++)
++                {
++                    decData[i * comps] = dataPtr[i * comps + 2];
++                    decData[i * comps + 1] = dataPtr[i * comps + 1];
++                    decData[i * comps + 2] = dataPtr[i * comps];
++                    if (image->getPixelFormat() == GL_BGRA)
++                        decData[i * comps + 3] = dataPtr[i * comps + 3];
++                }
++                dataPtr = decData;
 +            }
++
+             glTexSubImage2D( target, 0,
+                 0, 0,
+                 inwidth, inheight,
+-                (GLenum)image->getPixelFormat(),
+-                (GLenum)image->getDataType(),
++                pixelFormat,
++                type,
+                 dataPtr);
++
++            if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                delete[] decData;
          }
          else if (extensions->isCompressedTexImage2DSupported())
          {
+@@ -2858,7 +3203,11 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
+                 dataPtr);
+         }
+ 
+-        mipmapAfterTexImage(state, mipmapResult);
++        // Dont use mipmap as it cant be generated or is not needed 
++        if (compressed_image || !mipmappingRequired)
++            glTexParameteri(target, GL_TEXTURE_MAX_LEVEL, 0);
++        else
++            mipmapAfterTexImage(state, mipmapResult);
+     }
+     else
+     {
+@@ -2871,7 +3220,16 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
+ 
+             if( !compressed_image )
+             {
+-                for( GLsizei k = 0 ; k < numMipmapLevels  && (width || height) ;k++)
++                unsigned char* decData;
++                unsigned short* data16;
++                if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                    decData = new unsigned char[width * height * 4];
++                if (force16Bits && needSWDecompression)
++                    data16 = new unsigned short[width * height];
++
++                unsigned char* origDataPtr = dataPtr;
++
++                for( GLsizei k = 0 ; k < numMipmapLevels && (width || height) ;k++)
+                 {
+ 
+                     if (width == 0)
+@@ -2879,16 +3237,62 @@ void Texture::applyTexImage2D_subload(State& state, GLenum target, const Image*
+                     if (height == 0)
+                         height = 1;
+ 
++                    dataPtr = origDataPtr + image->getMipmapOffset(k);
++
++                    if (needSWDecompression)
++                    {
++                        decompressBC(width, height, _internalFormat, dataPtr, decData);
++
++                        dataPtr = decData;
++
++                        if (force16Bits)
++                        {
++                            switch (_internalFormat) {
++                                case GL_COMPRESSED_RGB_S3TC_DXT1_EXT: {
++                                    for (int i = 0; i < width * height; i++)
++                                        data16[i] = ((decData[i * 4] >> 3) << 11) | ((decData[i * 4 + 1] >> 2) << 5) | (decData[i * 4 + 2] >> 3);
++                                    dataPtr = (unsigned char*) data16;
++                                } break;
++                                case GL_COMPRESSED_RGBA_S3TC_DXT1_EXT: {
++                                    for (int i = 0; i < width * height; i++)
++                                        data16[i] = (((decData[i * 4] >> 3) & 0x1F) << 11) | (((decData[i * 4 + 1] >> 3) & 0x1F) << 6) | (((decData[i * 4 + 2] >> 3) & 0x1F) << 1) | ((decData[i * 4 + 3] >> 7) & 0x01);
++                                    dataPtr = (unsigned char*) data16;
++                                } break;
++                            }
++                        }
++                    }
++
++                    if (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA)
++                    {
++                        const int comps = (image->getPixelFormat() == GL_BGRA) ? 4 : 3;
++                        pixelFormat = (image->getPixelFormat() == GL_BGRA) ? GL_RGBA :GL_RGB;
++
++                        for (int i = 0; i < width * height; i++)
++                        {
++                            decData[i * comps] = dataPtr[i * comps + 2];
++                            decData[i * comps + 1] = dataPtr[i * comps + 1];
++                            decData[i * comps + 2] = dataPtr[i * comps];
++                            if (image->getPixelFormat() == GL_BGRA)
++                                decData[i * comps + 3] = dataPtr[i * comps + 3];
++                        }
++                        dataPtr = decData;
++                    }
++
+                     glTexSubImage2D( target, k,
+                         0, 0,
+                         width, height,
+-                        (GLenum)image->getPixelFormat(),
+-                        (GLenum)image->getDataType(),
+-                        dataPtr + image->getMipmapOffset(k));
++                        pixelFormat,
++                        type,
++                        dataPtr);
+ 
+                     width >>= 1;
+                     height >>= 1;
+                 }
++
++                if (needSWDecompression || (image->getPixelFormat() == GL_BGR || image->getPixelFormat() == GL_BGRA))
++                    delete[] decData;
++                if (force16Bits && needSWDecompression)
++                    delete[] data16;
+             }
+             else if (extensions->isCompressedTexImage2DSupported())
+             {
 diff --git a/src/osg/bcdec.h b/src/osg/bcdec.h
-index e69de29bb..b1ad764cc 100644
+index e69de29bb..2eb6b8315 100644
 --- a/src/osg/bcdec.h
 +++ b/src/osg/bcdec.h
-@@ -0,0 +1,1623 @@
+@@ -0,0 +1,1600 @@
 +﻿/* bcdec.h - v0.97
 +   provides functions to decompress blocks of BC compressed images
 +   written by Sergii "iOrange" Kudlai in 2022
@@ -1816,20 +2179,17 @@ index e69de29bb..b1ad764cc 100644
 +}
 +
 +
-+unsigned char* decompressBC(int width, int height, GLenum format, unsigned char* data) {
-+        unsigned char* compData, * uncompData, * temp;
++void decompressBC(int width, int height, GLenum format, unsigned char* src, unsigned char* outData) {
++        unsigned char* compData, * temp;
 +//        float* uncompDataHDR, * dstHDR;
 +    unsigned char tempBlock[16*2]; // used for bc5 2 channels to 3 channels expansion
 +
-+    const unsigned char* src = data;
++    //const unsigned char* src = data;
++    unsigned char* uncompData = outData;
 +    unsigned char* dst;
 +
 +    int w = width;
 +    int h = height;
-+
-+
-+    int i, j, ii, jj;
-+
 +
 +        switch (format) {
 +            case GL_COMPRESSED_RGB_S3TC_DXT1_EXT:
@@ -1837,11 +2197,10 @@ index e69de29bb..b1ad764cc 100644
 +            case GL_COMPRESSED_RGBA_S3TC_DXT3_EXT:
 +            case GL_COMPRESSED_RGBA_S3TC_DXT5_EXT:
 +            case GL_COMPRESSED_RGBA_BPTC_UNORM_EXT: {
-+                unsigned char* uncompData = new unsigned char[w * h * 4];
 +                dst = uncompData;
 +
-+                for (i = 0; i < h; i += 4) {
-+                    for (j = 0; j < w; j += 4) {
++                for (int i = 0; i < h; i += 4) {
++                    for (int j = 0; j < w; j += 4) {
 +                        dst = uncompData + (i * w + j) * 4;
 +                        if (format == GL_COMPRESSED_RGB_S3TC_DXT1_EXT || 
 +                            format == GL_COMPRESSED_RGBA_S3TC_DXT1_EXT) {
@@ -1859,20 +2218,6 @@ index e69de29bb..b1ad764cc 100644
 +                        }
 +                    }
 +                }
-+
-+                if (format == GL_COMPRESSED_RGB_S3TC_DXT1_EXT) {
-+                    unsigned char* uncompRGBData = new unsigned char[w * h * 3];
-+                    for (int i = 0; i < w*h; i++) {
-+                        uncompRGBData[i * 3 + 0] = uncompData[i * 4 + 0];
-+                        uncompRGBData[i * 3 + 1] = uncompData[i * 4 + 1];
-+                        uncompRGBData[i * 3 + 2] = uncompData[i * 4 + 2];
-+                    }
-+                    delete uncompData;
-+
-+                    return uncompRGBData;
-+                }
-+                else
-+                    return uncompData;
 +            } break;
 +/*
 +            case DXGI_FORMAT_BC4_UNORM:
@@ -1897,11 +2242,10 @@ index e69de29bb..b1ad764cc 100644
 +*/
 +            case GL_COMPRESSED_RED_GREEN_RGTC2_EXT:
 +            case GL_COMPRESSED_SIGNED_RED_GREEN_RGTC2_EXT: {
-+                unsigned char* uncompData = new unsigned char[w * h * 2];
 +                dst = uncompData;
 +
-+                for (i = 0; i < h; i += 4) {
-+                    for (j = 0; j < w; j += 4) {
++                for (int i = 0; i < h; i += 4) {
++                    for (int j = 0; j < w; j += 4) {
 +                        dst = uncompData + (i * w + j) * 2;
 +#ifdef BCDEC_BC4BC5_PRECISE
 +                        bcdec_bc5(src, tempBlock, 4*2, fourcc == DXGI_FORMAT_BC5_SNORM);
@@ -1912,8 +2256,8 @@ index e69de29bb..b1ad764cc 100644
 +
 +                        // copy 2 channels from temp buffer to the ourput
 +                        temp = tempBlock;
-+                        for (ii = 0; ii < 4; ++ii) {
-+                            for (jj = 0; jj < 4; ++jj, temp += 2) {
++                        for (int ii = 0; ii < 4; ++ii) {
++                            for (int jj = 0; jj < 4; ++jj, temp += 2) {
 +                                dst[jj * 2 + 0] = temp[0];
 +                                dst[jj * 2 + 1] = temp[1];
 +                            }
@@ -1921,8 +2265,6 @@ index e69de29bb..b1ad764cc 100644
 +                        }
 +                    }
 +                }
-+
-+                return uncompData;
 +            } break;
 +/*
 +            case DXGI_FORMAT_BC6H_UF16:
@@ -1942,8 +2284,6 @@ index e69de29bb..b1ad764cc 100644
 +
 +            } break;
 +*/
-+            default:
-+                return (unsigned char*) data;
 +        }
 +}
 +
