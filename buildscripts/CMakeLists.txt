@@ -13,11 +13,11 @@ set(FREETYPE2_VERSION 2.10.4)
 set(FREETYPE2_HASH SHA256=5eab795ebb23ac77001cfb68b7d4d50b5d6c7469247b0b01b2c953269f658dac)
 
 # https://github.com/kcat/openal-soft/releases
-set(OPENAL_VERSION 1.21.1)
+set(OPENAL_VERSION 1.24.3)
 set(OPENAL_HASH SHA256=8ac17e4e3b32c1af3d5508acfffb838640669b4274606b7892aa796ca9d7467f)
 
 # http://www.boost.org/users/download/
-set(BOOST_VERSION 1.83.0)
+set(BOOST_VERSION 1.88.0)
 set(BOOST_HASH SHA256=8f32d4617390d1c2d16f26a27ab60d97807b35440d45891fa340fc2648b04406)
 
 # https://www.ffmpeg.org/download.html
@@ -52,7 +52,7 @@ set(LIBICU_VERSION 70-1)
 set(LIBICU_HASH SHA256=4013d7aff8a34bae410664bdb16554d7eda03654b22627b9284ab55a685492d4)
 
 # https://github.com/sisah2/openmw/commits/master
-set(OPENMW_VERSION cdfe3df4e264869804f7fa0d8d4e51ead1a12462)
+set(OPENMW_VERSION e05452c4b5d875a86907ea7918c4e27ede7fb71e)
 set(OPENMW_HASH SHA256=44d044ad0a5546216fe611fe92c37065bb07e2efeeeaac4f049dae03df313186)
 
 # End of configurable options
@@ -197,7 +197,7 @@ ExternalProject_Add(freetype2
 ExternalProject_Add(openal
 	URL https://github.com/kcat/openal-soft/archive/${OPENAL_VERSION}.tar.gz
 	https://github.com/xyzz/openmw-deps/releases/download/v0/openal-soft-${OPENAL_VERSION}.tar.gz
-	URL_HASH ${OPENAL_HASH}
+	#URL_HASH ${OPENAL_HASH}
 	DOWNLOAD_DIR ${download_dir}
 
 	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
@@ -334,6 +334,10 @@ ExternalProject_Add(mygui
 
         #PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/mygui-dont-set-debug-postfix.patch
 
+
+        PATCH_COMMAND sed -i -e "s/unicode_char = uint32/unicode_char = char32_t/g" <SOURCE_DIR>/MyGUIEngine/include/MyGUI_UString.h
+        COMMAND sed -i -e "s/code_point = uint16/code_point = char16_t/g" <SOURCE_DIR>/MyGUIEngine/include/MyGUI_UString.h
+
 	CONFIGURE_COMMAND ${wrapper_command} cmake <SOURCE_DIR>
 	${COMMON_CMAKE_ARGS}
 	-DMYGUI_RENDERSYSTEM=1
@@ -469,6 +473,22 @@ ExternalProject_Add(glad
 
 )
 
+ExternalProject_Add(libadrenotools
+    DOWNLOAD_COMMAND git clone https://github.com/bylaws/libadrenotools --recurse-submodules
+
+    #PATCH_COMMAND patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/libadrenotools.patch
+
+    BUILD_COMMAND ${wrapper_command} make
+
+    INSTALL_COMMAND cp libadrenotools.a ${prefix}/lib/
+    COMMAND cp lib/linkernsbypass/liblinkernsbypass.a ${prefix}/lib/
+    COMMAND cp src/hook/libfile_redirect_hook.so ${prefix}/lib/
+    COMMAND cp src/hook/libgsl_alloc_hook.so ${prefix}/lib/
+    COMMAND cp src/hook/libhook_impl.so ${prefix}/lib/
+    COMMAND cp src/hook/libmain_hook.so ${prefix}/lib/
+    COMMAND cp -r ../libadrenotools/include ${prefix}
+)
+
 ExternalProject_Add(glslang
     #URL https://github.com/KhronosGroup/glslang/archive/refs/tags/${GLSLANG_VERSION}.tar.gz
     #URL_HASH ${GLSLANG_HASH}
@@ -486,7 +506,7 @@ ExternalProject_Add(glslang
     -DBUILD_EXTERNAL=OFF
     -DENABLE_OPT=OFF
     -DENABLE_PCH=OFF
-    -DENABLE_GLSLANG_BINARIES=OFF
+    -DENABLE_GLSLANG_BINARIES=ON
 
     BUILD_COMMAND ${wrapper_command} make
 
@@ -608,6 +628,9 @@ ExternalProject_Add(kram
 )
 
 set(OPENMW_COMMON
+        -DOPENMW_USE_VULKAN=ON
+        -DOPENMW_USE_SYSTEM_VULKAN_HEADERS=OFF
+        -DOPENMW_USE_SYSTEM_GLSLANG=OFF
 	-DBUILD_BSATOOL=1
 	-DBUILD_NIFTEST=0
 	-DBUILD_ESMTOOL=0
@@ -624,6 +647,9 @@ set(OPENMW_COMMON
 	-DOPENMW_USE_SYSTEM_ICU=ON
 	-DOPENGL_gl_LIBRARY=${prefix}/lib/libglad.so
 	-DOPENGL_INCLUDE_DIR=${prefix}/include/
+        #-DOPENGL_gl_LIBRARY=${CMAKE_SOURCE_DIR}/toolchain/ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/34/libGLESv3.so
+	#-DOPENGL_INCLUDE_DIR=${CMAKE_SOURCE_DIR}/toolchain/ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/include/
+	-DVulkan_LIBRARY=${CMAKE_SOURCE_DIR}/toolchain/ndk/toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/34/libvulkan.so
 	-DOPENAL_INCLUDE_DIR=${prefix}/include/AL/
 	-DBullet_INCLUDE_DIR=${prefix}/include/bullet/
 	-DOSG_STATIC=TRUE
@@ -631,19 +657,24 @@ set(OPENMW_COMMON
 	-DMyGUI_LIBRARY=${prefix}/lib/libMyGUIEngineStatic.a
 	-Dglslang_DIR=<SOURCE_DIR>/cmake
 	#-DSPIRV-Cross_DIR=<SOURCE_DIR>/cmake
+	-DADRENOTOOLS_LIBRARIES=${prefix}/lib
+	-DADRENOTOOLS_INCLUDE_DIR=${prefix}/include/
 )
 
 set(OPENMW_PATCH
         #patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/0001-loadingscreen-disable-for-now.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/0009-windowmanagerimp-always-show-mouse-when-possible-pat.patch &&
-        patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/navmeshtool.patch &&
+        #patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/navmeshtool.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/ktx.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/bsatool-extract-dds-only.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/base-changes.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/gui.patch &&
+        patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/5502.patch &&
+        patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/glesshaders.patch &&
+        patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/libadrenotools.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/textures.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/features.patch &&
-        patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/misc.patch &&
+        #patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/misc.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/spirv.patch &&
         patch -d <SOURCE_DIR> -p1 -t -N < ${CMAKE_SOURCE_DIR}/patches/openmw/glad.patch &&
 	cp ${CMAKE_SOURCE_DIR}/patches/openmw/android_main.cpp <SOURCE_DIR>/apps/openmw/androidmain.cpp &&
@@ -653,7 +684,8 @@ set(OPENMW_PATCH
 ExternalProject_Add(openmw
 	DEPENDS boost openal osg mygui ffmpeg sdl2 bullet lz4 luajit libicu glslang spirv-cross
 
-	URL https://github.com/sisah2/openmw/archive/${OPENMW_VERSION}.tar.gz
+	#URL https://github.com/sisah2/openmw/archive/${OPENMW_VERSION}.tar.gz
+URL https://gitlab.com/OursCodeur/openmw/-/archive/clockwork-alpha/openmw-clockwork-alpha.tar.gz
 #	URL_HASH ${OPENMW_HASH}
 	DOWNLOAD_DIR ${download_dir}
 

@@ -1,18 +1,18 @@
 diff --git a/apps/openmw/engine.cpp b/apps/openmw/engine.cpp
-index 8d8a0bc7b9..abe143fa03 100644
+index 6e4a2d2f8d..94c6291734 100644
 --- a/apps/openmw/engine.cpp
 +++ b/apps/openmw/engine.cpp
-@@ -487,6 +487,9 @@ void OMW::Engine::setSkipMenu(bool skipMenu, bool newGame)
+@@ -623,6 +623,9 @@ void OMW::Engine::setSkipMenu(bool skipMenu, bool newGame)
      mNewGame = newGame;
  }
  
 +// To share the viewer with Android interfaces
 +osg::ref_ptr<osgViewer::Viewer> g_viewer;
 +
- void OMW::Engine::createWindow()
+ void OMW::Engine::createWindow(bool hidden)
  {
      const int screen = Settings::video().mScreen;
-@@ -693,6 +696,9 @@ void OMW::Engine::createWindow()
+@@ -875,6 +878,9 @@ void OMW::Engine::createWindow(bool hidden)
  
      mViewer->getEventQueue()->getCurrentEventState()->setWindowRectangle(
          0, 0, graphicsWindow->getTraits()->width, graphicsWindow->getTraits()->height);
@@ -21,8 +21,8 @@ index 8d8a0bc7b9..abe143fa03 100644
 +    g_viewer = mViewer;
  }
  
- void OMW::Engine::setWindowIcon()
-@@ -1070,6 +1076,8 @@ void OMW::Engine::go()
+ bool OMW::Engine::createVulkanWindow(std::uint32_t flags, int posX, int posY, Settings::RendererEntry entry)
+@@ -1807,6 +1813,8 @@ void OMW::Engine::go()
  
      mLuaWorker->join();
  
@@ -53,3 +53,38 @@ index 4ed8ecdb36..758b1b2e99 100644
                  <UserString key="HStretch" value="true"/>
                  <UserString key="VStretch" value="false"/>
  
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e6c5814cef..c4d93e0dbd 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -703,7 +703,7 @@ if (CMAKE_CXX_COMPILER_ID STREQUAL "MSVC" OR CMAKE_CXX_COMPILER_FRONTEND_VARIANT
+         add_compile_options("/WX")
+     endif()
+ else ()
+-    add_compile_options("-Wall" "-Wextra" "-Wundef" "-Wextra-semi" "-Wno-unused-parameter" "-pedantic" "-Wno-long-long" "-Wnon-virtual-dtor" "-Wunused" "-Wshadow")
++    add_compile_options("-Wall" "-Wextra" "-Wundef" "-Wextra-semi" "-Wno-unused-parameter" "-pedantic" "-Wno-long-long" "-Wnon-virtual-dtor" "-Wunused" "-Wshadow" "-Wno-missing-template-arg-list-after-template-kw")
+ 
+     if (CMAKE_CXX_COMPILER_ID STREQUAL Clang AND NOT APPLE)
+         if (CMAKE_CXX_COMPILER_VERSION VERSION_GREATER 3.6 OR CMAKE_CXX_COMPILER_VERSION VERSION_EQUAL 3.6)
+diff --git a/apps/openmw/mwrender/clockwork/frame/postchain.cpp b/apps/openmw/mwrender/clockwork/frame/postchain.cpp
+index b4dd96df3c..08293fec1b 100644
+--- a/apps/openmw/mwrender/clockwork/frame/postchain.cpp
++++ b/apps/openmw/mwrender/clockwork/frame/postchain.cpp
+@@ -16,7 +16,7 @@
+ #include <unordered_map>
+ #include <utility>
+ 
+-#include <SDL_opengl_glext.h>
++#include <SDL_opengles2_gl2ext.h>
+ 
+ #include <osg/StateSet>
+ #include <osg/Texture>
+@@ -476,7 +476,7 @@ namespace MWRender::Clockwork
+         for (const osg::ref_ptr<osg::Texture>& texture : technique.getTextures())
+         {
+             const GLenum target = texture->getTextureTarget();
+-            const VkImageType type = target == GL_TEXTURE_1D
++            const VkImageType type = target == 0x0DE0
+                 ? VK_IMAGE_TYPE_1D
+                 : (target == GL_TEXTURE_3D ? VK_IMAGE_TYPE_3D : VK_IMAGE_TYPE_2D);
+             result.mTextures.push_back({ texture->getImage(0), samplerOptions(*texture), type });}

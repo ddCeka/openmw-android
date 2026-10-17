@@ -1,0 +1,5516 @@
+diff --git a/apps/openmw/engine.cpp b/apps/openmw/engine.cpp
+index 15690a1da3..fced4e3869 100644
+--- a/apps/openmw/engine.cpp
++++ b/apps/openmw/engine.cpp
+@@ -1523,6 +1523,8 @@ void OMW::Engine::prepareEngine()
+         shaders.setSpirvCache(mClockwork->sceneDevice().mCachePath);
+         mClockwork->setGuiShaders(&shaders);
+     }
++    else
++        mResourceSystem->getSceneManager()->setShaderPath(mResDir / "shaders/gles");
+ #endif
+ 
+ #if OSG_VERSION_LESS_THAN(3, 6, 6)
+diff --git a/files/shaders/CMakeLists.txt b/files/shaders/CMakeLists.txt
+index 82df3364ee..acf41433fc 100644
+--- a/files/shaders/CMakeLists.txt
++++ b/files/shaders/CMakeLists.txt
+@@ -7,6 +7,88 @@ set(SDIR ${CMAKE_CURRENT_SOURCE_DIR})
+ set(DDIRRELATIVE resources/shaders)
+ 
+ set(SHADER_FILES
++    gles/lib/water/fresnel.glsl
++    gles/lib/water/rain_ripples.glsl
++    gles/lib/water/ripples.glsl
++    gles/lib/view/depth.glsl
++    gles/lib/luminance/constants.glsl
++    gles/lib/particle/soft.glsl
++    gles/lib/particle/occlusion.glsl
++    gles/lib/util/quickstep.glsl
++    gles/lib/util/coordinates.glsl
++    gles/lib/util/distortion.glsl
++    gles/lib/core/fragment.glsl
++    gles/lib/core/fragment.h.glsl
++    gles/lib/core/fragment_multiview.glsl
++    gles/lib/core/lighting_fragment.glsl
++    gles/lib/core/lighting_vertex.glsl
++    gles/lib/core/lighting_fragment_legacy.glsl
++    gles/lib/core/lighting_vertex_legacy.glsl
++    gles/lib/core/lighting_fragment_impl.glsl
++    gles/lib/core/lighting_vertex_impl.glsl
++    gles/lib/core/vertex.glsl
++    gles/lib/core/vertex.h.glsl
++    gles/lib/core/vertex_multiview.glsl
++    gles/lib/core/clip.glsl
++    gles/lib/core/clip_legacy.glsl
++    gles/lib/core/clip_fragment.glsl
++    gles/lib/light/bindings.glsl
++    gles/lib/light/bindings-legacy.glsl
++    gles/lib/light/clamp.glsl
++    gles/lib/light/util.glsl
++    gles/lib/light/struct.glsl
++    gles/lib/sky/passes.glsl
++    gles/lib/material/parallax.glsl
++    gles/lib/material/alpha.glsl
++    gles/lib/material/struct.glsl
++    gles/lib/material/vertexcolors.glsl
++    gles/lib/material/colormodes.glsl
++    gles/compatibility/ripples_blobber.frag
++    gles/compatibility/ripples_simulate.frag
++    gles/compatibility/fog.glsl
++    gles/compatibility/groundcover.vert
++    gles/compatibility/groundcover.frag
++    gles/compatibility/globalmap.vert
++    gles/compatibility/globalmap.frag
++    gles/compatibility/water.vert
++    gles/compatibility/water.frag
++    gles/compatibility/objects.vert
++    gles/compatibility/objects.frag
++    gles/compatibility/terrain.vert
++    gles/compatibility/terrain.frag
++    gles/compatibility/terrain_composite.vert
++    gles/compatibility/terrain_composite.frag
++    gles/compatibility/shadows_vertex.glsl
++    gles/compatibility/shadows_fragment.glsl
++    gles/compatibility/shadowcasting.vert
++    gles/compatibility/shadowcasting.frag
++    gles/compatibility/normals.glsl
++    gles/compatibility/multiview_resolve.vert
++    gles/compatibility/multiview_resolve.frag
++    gles/compatibility/outline.frag
++    gles/compatibility/outline.vert
++    gles/compatibility/depthclipped.vert
++    gles/compatibility/depthclipped.frag
++    gles/compatibility/gui.vert
++    gles/compatibility/gui.frag
++    gles/compatibility/debug.vert
++    gles/compatibility/debug.frag
++    gles/compatibility/sky.vert
++    gles/compatibility/sky.frag
++    gles/compatibility/fullscreen_tri.vert
++    gles/compatibility/fullscreen_tri.frag
++    gles/compatibility/bs/default.vert
++    gles/compatibility/bs/default.frag
++    gles/compatibility/bs/nolighting.vert
++    gles/compatibility/bs/nolighting.frag
++    gles/compatibility/luminance/resolve.frag
++    gles/compatibility/luminance/luminance.frag
++    gles/core/ripples_blobber.comp
++    gles/core/ripples_simulate.comp
++    gles/core/gui.frag
++    gles/core/gui.vert
++    gles/core/lighting/cluster.comp
++    gles/core/lighting/cull.comp
+     lib/water/caustics.glsl
+     lib/water/fresnel.glsl
+     lib/water/rain_ripples.glsl
+diff --git a/files/shaders/gles/compatibility/bs/default.frag b/files/shaders/gles/compatibility/bs/default.frag
+index e69de29bb2..f451014d7f 100755
+--- a/files/shaders/gles/compatibility/bs/default.frag
++++ b/files/shaders/gles/compatibility/bs/default.frag
+@@ -0,0 +1,142 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++#pragma import_defines(FORCE_OPAQUE, DISTORTION)
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#define PER_PIXEL_LIGHTING 1
++
++#if @diffuseMap
++uniform sampler2D diffuseMap;
++varying vec2 diffuseMapUV;
++#endif
++
++#if @emissiveMap
++uniform sampler2D emissiveMap;
++varying vec2 emissiveMapUV;
++#endif
++
++#if @normalMap
++uniform sampler2D normalMap;
++varying vec2 normalMapUV;
++#endif
++
++varying float euclideanDepth;
++varying float linearDepth;
++
++varying vec3 passViewPos;
++varying vec3 passNormal;
++
++uniform vec2 screenRes;
++uniform float near;
++uniform float far;
++uniform float alphaRef;
++uniform bool useTreeAnim;
++uniform float distortionStrength;
++
++#include "lib/core/fragment.h.glsl"
++#include "lib/material/alpha.glsl"
++#include "lib/util/distortion.glsl"
++#include "lib/light/clamp.glsl"
++#include "lib/material/vertexcolors.glsl"
++
++#include "compatibility/shadows_fragment.glsl"
++#include "compatibility/fog.glsl"
++#include "compatibility/normals.glsl"
++
++centroid varying vec4 passColor;
++
++void main()
++{
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++    Material material = getMaterial();
++
++#if @diffuseMap
++    Color0 = texture2D(diffuseMap, diffuseMapUV);
++
++#if defined(DISTORTION) && DISTORTION
++    vec2 screenCoords = gl_FragCoord.xy / (screenRes * @distorionRTRatio);
++    Color0.a *= getDiffuseColor(material, passColor).a;
++    Color0 = applyDistortion(Color0, distortionStrength, gl_FragCoord.z, sampleOpaqueDepthTex(screenCoords).x);
++
++    return;
++#endif
++
++    Color0.a *= coveragePreservingAlphaScale(diffuseMap, diffuseMapUV);
++#else
++    Color0 = vec4(1.0);
++#endif
++
++    vec4 diffuseColor = getDiffuseColor(material, passColor);
++    if (!useTreeAnim)
++        Color0.a *= diffuseColor.a;
++    Color0.a = alphaTest(Color0.a, alphaRef);
++
++    vec3 specularColor = getSpecularColor(material, passColor).xyz;
++#if @normalMap
++    vec4 normalTex = texture2D(normalMap, normalMapUV);
++    vec3 normal = normalTex.xyz * 2.0 - 1.0;
++#if @reconstructNormalZ
++    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
++#endif
++    vec3 viewNormal = normalToView(normal);
++    specularColor *= normalTex.a;
++#else
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++#endif
++
++    float shadowing = unshadowedLightRatio(linearDepth);
++    vec3 diffuseLight, ambientLight, specularLight;
++    doLighting(gl_FragCoord.xy, passViewPos, viewNormal, material.shininess, shadowing, diffuseLight, ambientLight, specularLight);
++    vec3 diffuse = diffuseColor.xyz * diffuseLight;
++    vec3 ambient = getAmbientColor(material, passColor).xyz * ambientLight;
++    vec3 emission = getEmissionColor(material, passColor).xyz * material.emissiveMult;
++#if @emissiveMap
++    emission *= texture2D(emissiveMap, emissiveMapUV).xyz;
++#endif
++    vec3 lighting = diffuse + ambient + emission;
++    vec3 specular = specularColor * specularLight * material.specStrength;
++
++    clampLighting(lighting);
++
++    Color0.xyz = Color0.xyz * lighting + specular;
++
++    Color0 = applyFogAtDist(Color0, passViewPos, euclideanDepth, linearDepth, near, far);
++
++#if defined(FORCE_OPAQUE) && FORCE_OPAQUE
++    // having testing & blending isn't enough - we need to write an opaque pixel to be opaque
++    Color0.a = 1.0;
++#endif
++
++#if !defined(FORCE_OPAQUE) && !@disableNormals
++    Color1.xyz = viewNormal * 0.5 + 0.5;
++#endif
++
++    applyShadowDebugOverlay();
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/bs/default.vert b/files/shaders/gles/compatibility/bs/default.vert
+index e69de29bb2..ded2c7ae9b 100755
+--- a/files/shaders/gles/compatibility/bs/default.vert
++++ b/files/shaders/gles/compatibility/bs/default.vert
+@@ -0,0 +1,103 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#define PER_PIXEL_LIGHTING 1
++
++#include "lib/core/vertex.h.glsl"
++
++#if @diffuseMap
++varying vec2 diffuseMapUV;
++uniform mat4 texMat@diffuseMapUV;
++#endif
++
++#if @emissiveMap
++varying vec2 emissiveMapUV;
++uniform mat4 texMat@emissiveMapUV;
++#endif
++
++#if @normalMap
++varying vec2 normalMapUV;
++uniform mat4 texMat@normalMapUV;
++varying vec4 passTangent;
++#endif
++
++varying float euclideanDepth;
++varying float linearDepth;
++
++varying vec3 passViewPos;
++varying vec3 passNormal;
++
++#include "lib/view/depth.glsl"
++#include "lib/material/vertexcolors.glsl"
++
++#include "compatibility/shadows_vertex.glsl"
++#include "compatibility/normals.glsl"
++
++centroid varying vec4 passColor;
++
++void main(void)
++{
++    gl_Position = modelToClip(osg_Vertex);
++
++    vec4 viewPos = modelToView(osg_Vertex);
++    applyClipPlanes(viewPos);
++    euclideanDepth = length(viewPos.xyz);
++    linearDepth = getLinearDepth(gl_Position.z, viewPos.z);
++    passColor = osg_Color;
++    passViewPos = viewPos.xyz;
++    passNormal = osg_Normal.xyz;
++    normalToViewMatrix = osg_NormalMatrix;
++
++#if @normalMap
++    normalToViewMatrix *= generateTangentSpace(osg_MultiTexCoord7.xyzw, passNormal);
++#endif
++
++#if @diffuseMap
++    diffuseMapUV = (texMat@diffuseMapUV * osg_MultiTexCoord@diffuseMapUV).xy;
++#endif
++
++#if @emissiveMap
++    emissiveMapUV = (texMat@emissiveMapUV * osg_MultiTexCoord@emissiveMapUV).xy;
++#endif
++
++#if @normalMap
++    normalMapUV = (texMat@normalMapUV * osg_MultiTexCoord@normalMapUV).xy;
++#endif
++
++
++#if @shadows_enabled
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++    setupShadowCoords(viewPos, viewNormal);
++#endif
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/bs/nolighting.frag b/files/shaders/gles/compatibility/bs/nolighting.frag
+index e69de29bb2..58c855ba52 100755
+--- a/files/shaders/gles/compatibility/bs/nolighting.frag
++++ b/files/shaders/gles/compatibility/bs/nolighting.frag
+@@ -0,0 +1,120 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++#pragma import_defines(FORCE_OPAQUE)
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#if @diffuseMap
++uniform sampler2D diffuseMap;
++varying vec2 diffuseMapUV;
++#endif
++
++varying vec3 passViewPos;
++varying vec3 passNormal;
++varying float euclideanDepth;
++varying float linearDepth;
++varying float passFalloff;
++
++uniform vec2 screenRes;
++uniform bool useFalloff;
++uniform float far;
++uniform float near;
++uniform float alphaRef;
++
++#include "lib/core/fragment.h.glsl"
++#include "lib/material/alpha.glsl"
++#include "lib/material/vertexcolors.glsl"
++
++#include "compatibility/fog.glsl"
++#include "compatibility/shadows_fragment.glsl"
++
++#if @softParticles
++#include "lib/particle/soft.glsl"
++
++uniform float particleSize;
++uniform bool particleFade;
++uniform float softFalloffDepth;
++#endif
++
++centroid varying vec4 passColor;
++
++void main()
++{
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++    Material material = getMaterial();
++
++#if @diffuseMap
++    Color0 = texture2D(diffuseMap, diffuseMapUV);
++    Color0.a *= coveragePreservingAlphaScale(diffuseMap, diffuseMapUV);
++#else
++    Color0 = vec4(1.0);
++#endif
++
++    Color0 *= getDiffuseColor(material, passColor);
++
++    if (useFalloff)
++        Color0.a *= passFalloff;
++
++    Color0.a = alphaTest(Color0.a, alphaRef);
++
++    Color0 = applyFogAtDist(Color0, passViewPos, euclideanDepth, linearDepth, near, far);
++
++#if !defined(FORCE_OPAQUE) && @softParticles
++    vec2 screenCoords = gl_FragCoord.xy / screenRes;
++    vec3 viewVec = normalize(passViewPos.xyz);
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++
++    Color0.a *= calcSoftParticleFade(
++        viewVec,
++        passViewPos,
++        viewNormal,
++        near,
++        far,
++        sampleOpaqueDepthTex(screenCoords).x,
++        particleSize,
++        particleFade,
++        softFalloffDepth,
++        waterEnabled,
++        isReflection,
++        waterHeight,
++        osg_ViewMatrixInverse
++    );
++#endif
++
++#if defined(FORCE_OPAQUE) && FORCE_OPAQUE
++    Color0.a = 1.0;
++#endif
++
++#if !defined(FORCE_OPAQUE) && !@disableNormals
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++    Color1.xyz = viewNormal * 0.5 + 0.5;
++#endif
++
++    applyShadowDebugOverlay();
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/bs/nolighting.vert b/files/shaders/gles/compatibility/bs/nolighting.vert
+index e69de29bb2..e9a3718a01 100755
+--- a/files/shaders/gles/compatibility/bs/nolighting.vert
++++ b/files/shaders/gles/compatibility/bs/nolighting.vert
+@@ -0,0 +1,96 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#include "lib/core/vertex.h.glsl"
++
++#if @diffuseMap
++varying vec2 diffuseMapUV;
++uniform mat4 texMat@diffuseMapUV;
++#endif
++
++varying vec3 passNormal;
++varying vec3 passViewPos;
++varying float euclideanDepth;
++varying float linearDepth;
++varying float passFalloff;
++
++centroid varying vec4 passColor;
++
++uniform bool useFalloff;
++uniform vec4 falloffParams;
++
++#include "lib/view/depth.glsl"
++#include "lib/material/vertexcolors.glsl"
++
++#include "compatibility/shadows_vertex.glsl"
++
++void main(void)
++{
++    gl_Position = modelToClip(osg_Vertex);
++
++    vec4 viewPos = modelToView(osg_Vertex);
++    applyClipPlanes(viewPos);
++    euclideanDepth = length(viewPos.xyz);
++    linearDepth = getLinearDepth(gl_Position.z, viewPos.z);
++
++#if @diffuseMap
++    diffuseMapUV = (texMat@diffuseMapUV * osg_MultiTexCoord@diffuseMapUV).xy;
++#endif
++
++    passColor = osg_Color;
++    passViewPos = viewPos.xyz;
++    passNormal = osg_Normal.xyz;
++
++    if (useFalloff)
++    {
++        vec3 viewNormal = osg_NormalMatrix * normalize(osg_Normal.xyz);
++        vec3 viewDir = normalize(viewPos.xyz);
++        float viewAngle = abs(dot(viewNormal, viewDir));
++        passFalloff = smoothstep(falloffParams.x, falloffParams.y, viewAngle);
++
++        float startOpacity = min(falloffParams.z, 1.0);
++        float stopOpacity = max(falloffParams.w, 0.0);
++
++        passFalloff = mix(startOpacity, stopOpacity, passFalloff);
++    }
++    else
++    {
++        passFalloff = 1.0;
++    }
++
++#if @shadows_enabled
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++    setupShadowCoords(viewPos, viewNormal);
++#endif
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/debug.frag b/files/shaders/gles/compatibility/debug.frag
+index e69de29bb2..f679d3f55a 100755
+--- a/files/shaders/gles/compatibility/debug.frag
++++ b/files/shaders/gles/compatibility/debug.frag
+@@ -0,0 +1,51 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#include "lib/core/fragment.h.glsl"
++
++#include "lib/material/vertexcolors.glsl"
++
++centroid varying vec4 passColor;
++
++varying vec3 vertexNormal;
++
++uniform bool useAdvancedShader;
++
++void main()
++{
++    Material material = getMaterial();
++
++    vec3 lightDir = normalize(vec3(-1., -0.5, -2.));
++
++    float lightAttenuation = dot(-lightDir, vertexNormal) * 0.5 + 0.5;
++
++    if(!useAdvancedShader)
++    {
++        Color0 = getDiffuseColor(material, passColor);
++    }
++    else
++    {
++        Color0 = vec4(passColor.xyz * lightAttenuation, 1.);
++    }
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/debug.vert b/files/shaders/gles/compatibility/debug.vert
+index e69de29bb2..8ee233b5e8 100755
+--- a/files/shaders/gles/compatibility/debug.vert
++++ b/files/shaders/gles/compatibility/debug.vert
+@@ -0,0 +1,58 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#include "lib/core/vertex.h.glsl"
++
++uniform vec3 color;
++uniform vec3 trans;
++uniform vec3 scale;
++uniform bool useNormalAsColor;
++uniform bool useAdvancedShader;
++
++centroid varying vec4 passColor;
++varying vec3 vertexNormal;
++
++void main()
++{
++    if(!useAdvancedShader)
++    {
++        gl_Position = modelToClip( vec4(osg_Vertex));
++        vertexNormal = vec3(1., 1., 1.);
++        passColor  = osg_Color;
++    }
++    else
++    {
++        gl_Position = modelToClip( vec4(osg_Vertex.xyz * scale + trans,1));
++
++        vertexNormal = useNormalAsColor ? vec3(1., 1., 1.) : osg_Normal.xyz;
++        vec3 colorOut = useNormalAsColor? osg_Normal.xyz : color;
++        passColor = vec4(colorOut, 1.);
++    }
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/depthclipped.frag b/files/shaders/gles/compatibility/depthclipped.frag
+index e69de29bb2..6aac123d7b 100755
+--- a/files/shaders/gles/compatibility/depthclipped.frag
++++ b/files/shaders/gles/compatibility/depthclipped.frag
+@@ -0,0 +1,48 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#include "lib/core/fragment.h.glsl"
++
++uniform sampler2D diffuseMap;
++
++varying vec2 diffuseMapUV;
++varying float alphaPassthrough;
++
++void main()
++{
++
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++    float alpha = texture2D(diffuseMap, diffuseMapUV).a * alphaPassthrough;
++
++    const float alphaRef = 0.499;
++
++    if (alpha < alphaRef)
++        discard;
++
++    // DO NOT write to color!
++    // This is in charge of only updating depth buffer.
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/depthclipped.vert b/files/shaders/gles/compatibility/depthclipped.vert
+index e69de29bb2..7da5f526a3 100755
+--- a/files/shaders/gles/compatibility/depthclipped.vert
++++ b/files/shaders/gles/compatibility/depthclipped.vert
+@@ -0,0 +1,55 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++varying vec2 diffuseMapUV;
++varying float alphaPassthrough;
++
++uniform mat4 texMat0;
++
++#include "lib/core/vertex.h.glsl"
++#include "lib/material/vertexcolors.glsl"
++
++void main()
++{
++    Material material = getMaterial();
++
++    gl_Position = modelToClip(osg_Vertex);
++
++    vec4 viewPos = modelToView(osg_Vertex);
++
++    applyClipPlanes(viewPos);
++
++    if (material.vertexColorMode == ColorMode_AmbientAndDiffuse)
++        alphaPassthrough = osg_Color.a;
++    else
++        alphaPassthrough = material.diffuse.a;
++
++    diffuseMapUV = (texMat0 * osg_MultiTexCoord0).xy;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/fog.glsl b/files/shaders/gles/compatibility/fog.glsl
+index e69de29bb2..352e4d34ee 100755
+--- a/files/shaders/gles/compatibility/fog.glsl
++++ b/files/shaders/gles/compatibility/fog.glsl
+@@ -0,0 +1,121 @@
++// "lib/light/struct.glsl"
++
++#if @skyBlending
++// "lib/core/fragment.h.glsl"
++
++uniform float skyBlendingStart;
++#endif
++
++struct Fog {
++    vec4 color;
++    vec4 underwaterColor;
++    float start;
++    float underwaterStart;
++    float end;
++    float underwaterEnd;
++    float depth;
++};
++
++uniform Fog fog;
++uniform float waterHeight;
++uniform bool waterEnabled;
++uniform bool waterSurface;
++uniform bool isReflection;
++uniform mat4 osg_ViewMatrixInverse;
++
++
++const vec3 WATER_COLOR = vec3(0.090195, 0.115685, 0.12745);
++
++void computeFog(vec3 pos, float euclideanDist, float linearDist, float near, float far, out float colorScale, out vec3 colorOffset)
++{
++#if @radialFog
++    float dist = euclideanDist;
++#else
++    float dist = abs(linearDist);
++#endif
++
++    bool cameraBelowWater = false;
++    bool useWaterDepthFog = false;
++    float underwaterFogFactor = 1.0;
++    float waterDepth = 0.0;
++
++    if (waterEnabled) {
++        vec3 cameraPos = osg_ViewMatrixInverse[3].xyz;
++        cameraBelowWater = cameraPos.z < waterHeight;
++        if (!cameraBelowWater && !isReflection && !waterSurface) {
++            vec3 worldPos = (osg_ViewMatrixInverse * vec4(pos, 1)).xyz;
++
++            if (worldPos.z < waterHeight) {
++                useWaterDepthFog = true;
++                const float visibility = 2500.0;
++                const float depthFade = 0.25;
++                waterDepth = dist * clamp((waterHeight - worldPos.z) / (cameraPos.z - worldPos.z), 0.0, 1.0);
++                float depthCorrection = sqrt(1.0 + 4.0 * depthFade * depthFade);
++                underwaterFogFactor = depthFade * depthFade
++                    / (-0.5 * depthCorrection + 0.5 - waterDepth / visibility) + 0.5 * depthCorrection + 0.5;
++                underwaterFogFactor = clamp(underwaterFogFactor, 0.0, 1.0);
++            }
++        }
++    }
++
++    vec4 fogColor = cameraBelowWater ? fog.underwaterColor : fog.color;
++    float start = cameraBelowWater ? fog.underwaterStart : fog.start;
++    float end = cameraBelowWater ? fog.underwaterEnd : fog.end;
++
++    if (fog.depth >= 0.0) {
++        start = near * fog.depth + far * (1.0 - fog.depth);
++        end = far;
++        useWaterDepthFog = false;
++    }
++
++    if (useWaterDepthFog)
++        dist -= waterDepth;
++
++#if @exponentialFog
++    float fogValue = 1.0 - exp(-2.0 * max(0.0, dist - start / 2.0) / (end - start / 2.0));
++#else
++    float fogValue = clamp((dist - start) * (1.0 / (end - start)), 0.0, 1.0);
++#endif
++    colorScale = 1.0 - fogValue;
++#ifdef ADDITIVE_BLENDING
++    colorOffset = vec3(0.0);
++#else
++    colorOffset = fogColor.xyz * fogValue;
++#endif
++
++    if (useWaterDepthFog) {
++        colorScale *= 1.0 - underwaterFogFactor;
++#ifndef ADDITIVE_BLENDING
++        colorOffset += WATER_COLOR * length(sun.ambient.xyz) * underwaterFogFactor * (1.0 - fogValue);
++#endif
++    }
++
++#if @skyBlending
++    if (!cameraBelowWater && !isReflection) {
++        float fadeValue = clamp((far - dist) / (far - skyBlendingStart), 0.0, 1.0);
++        fadeValue *= fadeValue;
++        colorScale *= fadeValue;
++#ifndef ADDITIVE_BLENDING
++        colorOffset = colorOffset * fadeValue + sampleSkyColor(gl_FragCoord.xy / screenRes) * (1.0 - fadeValue);
++#endif
++    }
++#endif
++}
++
++vec4 applyFogAtDist(vec4 color, vec3 pos, float euclideanDist, float linearDist, float near, float far)
++{
++    float colorScale;
++    vec3 colorOffset;
++    computeFog(pos, euclideanDist, linearDist, near, far, colorScale, colorOffset);
++    color.xyz = color.xyz * colorScale + colorOffset;
++    return color;
++}
++
++vec4 applyFogAtPos(vec4 color, vec3 pos, float near, float far)
++{
++    return applyFogAtDist(color, pos, length(pos), pos.z, near, far);
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/fullscreen_tri.frag b/files/shaders/gles/compatibility/fullscreen_tri.frag
+index e69de29bb2..0017a4d843 100755
+--- a/files/shaders/gles/compatibility/fullscreen_tri.frag
++++ b/files/shaders/gles/compatibility/fullscreen_tri.frag
+@@ -0,0 +1,31 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++varying vec2 uv;
++
++#include "lib/core/fragment.h.glsl"
++
++void main()
++{
++    Color0 = samplerLastShader(uv);
++}
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/fullscreen_tri.vert b/files/shaders/gles/compatibility/fullscreen_tri.vert
+index e69de29bb2..fb805bfc22 100755
+--- a/files/shaders/gles/compatibility/fullscreen_tri.vert
++++ b/files/shaders/gles/compatibility/fullscreen_tri.vert
+@@ -0,0 +1,41 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++uniform vec2 scaling;
++
++varying vec2 uv;
++
++#include "lib/core/vertex.h.glsl"
++
++void main()
++{
++    gl_Position = vec4(osg_Vertex.xy, 0.0, 1.0);
++    uv = (gl_Position.xy * 0.5 + 0.5) * scaling;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/globalmap.frag b/files/shaders/gles/compatibility/globalmap.frag
+index e69de29bb2..12f233ce47 100755
+--- a/files/shaders/gles/compatibility/globalmap.frag
++++ b/files/shaders/gles/compatibility/globalmap.frag
+@@ -0,0 +1,36 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++uniform sampler2D diffuseMap;
++uniform sampler2D alphaMap;
++
++varying vec2 alphaMapUV;
++varying vec2 diffuseMapUV;
++
++void main()
++{
++    vec4 diffuseTex = texture2D(diffuseMap, diffuseMapUV);
++    float alpha = texture2D(alphaMap, alphaMapUV).a;
++    Color0 = vec4(diffuseTex.rgb, diffuseTex.a * alpha);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/globalmap.vert b/files/shaders/gles/compatibility/globalmap.vert
+index e69de29bb2..17d2e8e9a1 100755
+--- a/files/shaders/gles/compatibility/globalmap.vert
++++ b/files/shaders/gles/compatibility/globalmap.vert
+@@ -0,0 +1,40 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++varying vec2 diffuseMapUV;
++varying vec2 alphaMapUV;
++
++void main()
++{
++    gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;
++
++    diffuseMapUV = osg_MultiTexCoord0.xy;
++    alphaMapUV = osg_MultiTexCoord1.xy;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/groundcover.frag b/files/shaders/gles/compatibility/groundcover.frag
+index e69de29bb2..f6f7d100c5 100755
+--- a/files/shaders/gles/compatibility/groundcover.frag
++++ b/files/shaders/gles/compatibility/groundcover.frag
+@@ -0,0 +1,123 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#include "lib/core/fragment.h.glsl"
++
++#define GROUNDCOVER
++
++#if @diffuseMap
++uniform sampler2D diffuseMap;
++varying vec2 diffuseMapUV;
++#endif
++
++#if @normalMap
++uniform sampler2D normalMap;
++varying vec2 normalMapUV;
++#endif
++
++// Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
++// They may do not look as intended with per-pixel lighting, so ignore this setting for now.
++#define PER_PIXEL_LIGHTING @normalMap
++
++varying float euclideanDepth;
++varying float linearDepth;
++//uniform vec2 screenRes;
++//uniform float near;
++uniform float far;
++uniform float alphaRef;
++
++#if PER_PIXEL_LIGHTING
++#include "lib/light/clamp.glsl"
++#else
++centroid varying vec3 shadedLighting;
++centroid varying vec3 passLighting;
++#endif
++
++varying vec3 passNormal;
++varying vec3 passViewPos;
++
++#include "shadows_fragment.glsl"
++#include "lib/material/alpha.glsl"
++#include "fog.glsl"
++#include "compatibility/normals.glsl"
++
++centroid varying vec4 passColor;
++
++void main()
++{
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++    Material material = getMaterial();
++
++#if @diffuseMap
++    Color0 = texture2D(diffuseMap, diffuseMapUV);
++#else
++    Color0 = vec4(1.0);
++#endif
++
++    if (euclideanDepth > @groundcoverFadeStart)
++        Color0.a *= 1.0-smoothstep(@groundcoverFadeStart, @groundcoverFadeEnd, euclideanDepth);
++
++    Color0.a = alphaTest(Color0.a, alphaRef);
++
++#if @normalMap
++    vec4 normalTex = texture2D(normalMap, normalMapUV);
++    vec3 normal = normalTex.xyz * 2.0 - 1.0;
++#if @reconstructNormalZ
++    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
++#endif
++    vec3 viewNormal = normalToView(normal);
++#else
++    vec3 viewNormal = normalToView(normalize(passNormal));
++#endif
++
++    float shadowing = unshadowedLightRatio(linearDepth);
++
++    vec3 lighting;
++#if !PER_PIXEL_LIGHTING
++    lighting = mix(shadedLighting, passLighting, shadowing);
++#else
++    vec3 diffuseLight, ambientLight, specularLight;
++    doLighting(gl_FragCoord.xy, passViewPos, viewNormal, material.shininess, shadowing, diffuseLight, ambientLight, specularLight);
++    lighting = diffuseLight + ambientLight;
++    clampLighting(lighting);
++#endif
++
++    Color0.xyz *= lighting;
++    Color0 = applyFogAtDist(Color0, passViewPos, euclideanDepth, linearDepth, near, far);
++
++#if !@disableNormals
++    Color1.xyz = viewNormal * 0.5 + 0.5;
++#endif
++
++    applyShadowDebugOverlay();
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/groundcover.vert b/files/shaders/gles/compatibility/groundcover.vert
+index e69de29bb2..0483a63883 100755
+--- a/files/shaders/gles/compatibility/groundcover.vert
++++ b/files/shaders/gles/compatibility/groundcover.vert
+@@ -0,0 +1,217 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#include "lib/core/vertex.h.glsl"
++
++#define GROUNDCOVER
++
++attribute vec4 aOffset;
++attribute vec3 aRotation;
++
++#if @diffuseMap
++varying vec2 diffuseMapUV;
++uniform mat4 texMat@diffuseMapUV;
++#endif
++
++#if @normalMap
++varying vec2 normalMapUV;
++uniform mat4 texMat@normalMapUV;
++#endif
++
++// Other shaders respect forcePPL, but legacy groundcover mods were designed to work with vertex lighting.
++// They may do not look as intended with per-pixel lighting, so ignore this setting for now.
++#define PER_PIXEL_LIGHTING @normalMap
++
++varying float euclideanDepth;
++varying float linearDepth;
++
++#if !PER_PIXEL_LIGHTING
++centroid varying vec3 shadedLighting;
++centroid varying vec3 passLighting;
++#include "lib/light/clamp.glsl"
++#endif
++
++varying vec3 passNormal;
++varying vec3 passViewPos;
++
++#include "shadows_vertex.glsl"
++#include "compatibility/normals.glsl"
++#include "lib/view/depth.glsl"
++
++uniform float osg_SimulationTime;
++uniform mat4 osg_ViewMatrixInverse;
++uniform mat4 osg_ViewMatrix;
++uniform float windSpeed;
++uniform vec3 playerPos;
++
++centroid varying vec4 passColor;
++
++#if @groundcoverStompMode == 0
++#else
++    #define STOMP 1
++    #if @groundcoverStompMode == 2
++        #define STOMP_HEIGHT_SENSITIVE 1
++    #endif
++    #define STOMP_INTENSITY_LEVEL @groundcoverStompIntensity
++#endif
++
++vec2 groundcoverDisplacement(in vec3 worldpos, float h)
++{
++    vec2 windDirection = vec2(1.0);
++    vec3 footPos = playerPos;
++    vec3 windVec = vec3(windSpeed * windDirection, 1.0);
++
++    float v = length(windVec);
++    vec2 displace = vec2(2.0 * windVec + 0.1);
++    vec2 harmonics = vec2(0.0);
++
++    harmonics += vec2((1.0 - 0.10*v) * sin(1.0*osg_SimulationTime + worldpos.xy / 1100.0));
++    harmonics += vec2((1.0 - 0.04*v) * cos(2.0*osg_SimulationTime + worldpos.xy / 750.0));
++    harmonics += vec2((1.0 + 0.14*v) * sin(3.0*osg_SimulationTime + worldpos.xy / 500.0));
++    harmonics += vec2((1.0 + 0.28*v) * sin(5.0*osg_SimulationTime + worldpos.xy / 200.0));
++
++    vec2 stomp = vec2(0.0);
++#if STOMP
++    float d = length(worldpos.xy - footPos.xy);
++#if STOMP_INTENSITY_LEVEL == 0
++    // Gentle intensity
++    const float STOMP_RANGE = 50.0; // maximum distance from player that grass is affected by stomping
++    const float STOMP_DISTANCE = 20.0; // maximum distance stomping can move grass
++#elif STOMP_INTENSITY_LEVEL == 1
++    // Reduced intensity
++    const float STOMP_RANGE = 80.0;
++    const float STOMP_DISTANCE = 40.0;
++#elif STOMP_INTENSITY_LEVEL == 2
++    // MGE XE intensity
++    const float STOMP_RANGE = 150.0;
++    const float STOMP_DISTANCE = 60.0;
++#endif
++    if (d < STOMP_RANGE && d > 0.0)
++        stomp = (STOMP_DISTANCE / d - STOMP_DISTANCE / STOMP_RANGE) * (worldpos.xy - footPos.xy);
++
++#ifdef STOMP_HEIGHT_SENSITIVE
++    stomp *= clamp((worldpos.z - footPos.z) / h, 0.0, 1.0);
++#endif
++#endif
++
++    return clamp(0.02 * h, 0.0, 1.0) * (harmonics * displace + stomp);
++}
++
++mat4 rotation(in vec3 angle)
++{
++    float sin_x = sin(angle.x);
++    float cos_x = cos(angle.x);
++    float sin_y = sin(angle.y);
++    float cos_y = cos(angle.y);
++    float sin_z = sin(angle.z);
++    float cos_z = cos(angle.z);
++
++    return mat4(
++        cos_z*cos_y+sin_x*sin_y*sin_z, -sin_z*cos_x, cos_z*sin_y+sin_z*sin_x*cos_y, 0.0,
++        sin_z*cos_y+cos_z*sin_x*sin_y, cos_z*cos_x, sin_z*sin_y-cos_z*sin_x*cos_y, 0.0,
++        -sin_y*cos_x, sin_x, cos_x*cos_y, 0.0,
++        0.0, 0.0, 0.0, 1.0);
++}
++
++mat3 rotation3(in mat4 rot4)
++{
++    return mat3(
++        rot4[0].xyz,
++        rot4[1].xyz,
++        rot4[2].xyz);
++}
++
++void main(void)
++{
++    Material material = getMaterial();
++
++    vec3 position = aOffset.xyz;
++    float scale = aOffset.w;
++
++    mat4 rotation = rotation(aRotation);
++    vec4 displacedVertex = rotation * scale * osg_Vertex;
++
++    displacedVertex = vec4(displacedVertex.xyz + position, 1.0);
++
++    vec4 worldPos = osg_ViewMatrixInverse * osg_ModelViewMatrix * displacedVertex;
++    worldPos.xy += groundcoverDisplacement(worldPos.xyz, osg_Vertex.z);
++    vec4 viewPos = osg_ViewMatrix * worldPos;
++    passViewPos = viewPos.xyz;
++    applyClipPlanes(viewPos);
++    euclideanDepth = length(viewPos.xyz);
++
++    if (length(osg_ModelViewMatrix * vec4(position, 1.0)) > @groundcoverFadeEnd)
++        gl_Position = vec4(0.0, 0.0, 0.0, 1.0);
++    else
++        gl_Position = viewToClip(viewPos);
++
++    linearDepth = getLinearDepth(gl_Position.z, viewPos.z);
++
++    passNormal = rotation3(rotation) * osg_Normal.xyz;
++    normalToViewMatrix = osg_NormalMatrix;
++#if @normalMap
++    normalToViewMatrix *= generateTangentSpace(osg_MultiTexCoord7.xyzw * rotation, passNormal);
++#endif
++
++#if (!PER_PIXEL_LIGHTING || @shadows_enabled)
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++#endif
++
++#if @diffuseMap
++    diffuseMapUV = (texMat@diffuseMapUV * osg_MultiTexCoord@diffuseMapUV).xy;
++#endif
++
++#if @normalMap
++    normalMapUV = (texMat@normalMapUV * osg_MultiTexCoord@normalMapUV).xy;
++#endif
++
++#if PER_PIXEL_LIGHTING
++    passViewPos = viewPos.xyz;
++#else
++    float shininess = max(1e-4, material.shininess);
++    vec3 viewDir = viewPos.xyz / euclideanDepth;
++
++    vec3 sunDiffuse, sunAmbient, unusedSpecular1, pointDiffuse, pointAmbient, unusedSpecular2;
++    directionalLighting(viewDir, viewNormal, shininess, sunDiffuse, sunAmbient, unusedSpecular1);
++    pointLighting(clipToScreen(gl_Position), viewDir, viewPos.xyz, viewNormal, shininess, pointDiffuse, pointAmbient, unusedSpecular2);
++    shadedLighting = pointDiffuse + pointAmbient + sunAmbient;
++    passLighting = shadedLighting + sunDiffuse;
++    clampLighting(shadedLighting);
++    clampLighting(passLighting);
++#endif
++
++#if (@shadows_enabled)
++    setupShadowCoords(viewPos, viewNormal);
++#endif
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/gui.frag b/files/shaders/gles/compatibility/gui.frag
+index e69de29bb2..399f0690ad 100755
+--- a/files/shaders/gles/compatibility/gui.frag
++++ b/files/shaders/gles/compatibility/gui.frag
+@@ -0,0 +1,33 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++uniform sampler2D diffuseMap;
++
++varying vec2 diffuseMapUV;
++varying vec4 passColor;
++
++void main()
++{
++    Color0 = texture2D(diffuseMap, diffuseMapUV) * passColor;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/gui.vert b/files/shaders/gles/compatibility/gui.vert
+index e69de29bb2..55697b8b28 100755
+--- a/files/shaders/gles/compatibility/gui.vert
++++ b/files/shaders/gles/compatibility/gui.vert
+@@ -0,0 +1,39 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++varying vec2 diffuseMapUV;
++varying vec4 passColor;
++
++void main()
++{
++    gl_Position = vec4(osg_Vertex.xyz, 1.0);
++    diffuseMapUV = osg_MultiTexCoord0.xy;
++    passColor = osg_Color;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/luminance/luminance.frag b/files/shaders/gles/compatibility/luminance/luminance.frag
+index e69de29bb2..3f6e03e60b 100755
+--- a/files/shaders/gles/compatibility/luminance/luminance.frag
++++ b/files/shaders/gles/compatibility/luminance/luminance.frag
+@@ -0,0 +1,36 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#include "lib/luminance/constants.glsl"
++
++varying vec2 uv;
++uniform sampler2D sceneTex;
++
++void main()
++{
++    float lum = dot(texture2D(sceneTex, uv).rgb, vec3(0.2126, 0.7152, 0.0722));
++    lum = max(lum, epsilon);
++
++    Color0.r = clamp((log2(lum) - minLog) * invLogLumRange, 0.0, 1.0);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/luminance/resolve.frag b/files/shaders/gles/compatibility/luminance/resolve.frag
+index e69de29bb2..90edfec674 100755
+--- a/files/shaders/gles/compatibility/luminance/resolve.frag
++++ b/files/shaders/gles/compatibility/luminance/resolve.frag
+@@ -0,0 +1,40 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#include "lib/luminance/constants.glsl"
++
++varying vec2 uv;
++uniform sampler2D luminanceSceneTex;
++uniform sampler2D prevLuminanceSceneTex;
++
++uniform float osg_DeltaFrameTime;
++
++void main()
++{
++    float prevLum = texture2D(prevLuminanceSceneTex, vec2(0.5, 0.5)).r;
++    float currLum = texture2D(luminanceSceneTex, vec2(0.5, 0.5)).r;
++
++    float avgLum = exp2((currLum * logLumRange) + minLog);
++    Color0.r = prevLum + (avgLum - prevLum) * (1.0 - exp(-osg_DeltaFrameTime * hdrExposureTime));
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/multiview_resolve.frag b/files/shaders/gles/compatibility/multiview_resolve.frag
+index e69de29bb2..9ed3c0daa9 100755
+--- a/files/shaders/gles/compatibility/multiview_resolve.frag
++++ b/files/shaders/gles/compatibility/multiview_resolve.frag
+@@ -0,0 +1,40 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++//#extension GL_EXT_texture_array : require
++
++varying vec2 uv;
++uniform sampler2DArray lastShader;
++
++void main()
++{
++    int view = 0;
++    vec3 uvz = vec3(uv.x * 2., uv.y, 0);
++    if(uvz.x > 1.)
++    {
++        uvz.x -= 1.;
++        uvz.z = 1;
++    }
++
++    Color0 = texture2DArray(lastShader, uvz);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/multiview_resolve.vert b/files/shaders/gles/compatibility/multiview_resolve.vert
+index e69de29bb2..1c628cb1c7 100755
+--- a/files/shaders/gles/compatibility/multiview_resolve.vert
++++ b/files/shaders/gles/compatibility/multiview_resolve.vert
+@@ -0,0 +1,37 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++varying vec2 uv;
++
++void main()
++{
++    gl_Position = vec4(osg_Vertex.xy, 0.0, 1.0);
++    uv = gl_Position.xy * 0.5 + 0.5;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/normals.glsl b/files/shaders/gles/compatibility/normals.glsl
+index e69de29bb2..f04e6fc47f 100755
+--- a/files/shaders/gles/compatibility/normals.glsl
++++ b/files/shaders/gles/compatibility/normals.glsl
+@@ -0,0 +1,16 @@
++varying mat3 normalToViewMatrix;
++
++mat3 generateTangentSpace(vec4 tangent, vec3 normal)
++{
++    vec3 normalizedNormal = normalize(normal);
++    vec3 normalizedTangent = normalize(tangent.xyz);
++    vec3 binormal = cross(normalizedNormal, normalizedTangent) * tangent.w;
++    return mat3(normalizedTangent, binormal, normalizedNormal);
++}
++
++vec3 normalToView(vec3 normal)
++{
++    return normalize(normalToViewMatrix * normal);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/objects.frag b/files/shaders/gles/compatibility/objects.frag
+index e69de29bb2..6fc8c6c41f 100755
+--- a/files/shaders/gles/compatibility/objects.frag
++++ b/files/shaders/gles/compatibility/objects.frag
+@@ -0,0 +1,309 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#pragma import_defines(FORCE_OPAQUE, DISTORTION)
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#if @diffuseMap
++uniform sampler2D diffuseMap;
++varying vec2 diffuseMapUV;
++#endif
++
++#if @darkMap
++uniform sampler2D darkMap;
++varying vec2 darkMapUV;
++#endif
++
++#if @detailMap
++uniform sampler2D detailMap;
++varying vec2 detailMapUV;
++#endif
++
++#if @decalMap
++uniform sampler2D decalMap;
++varying vec2 decalMapUV;
++#endif
++
++#if @emissiveMap
++uniform sampler2D emissiveMap;
++varying vec2 emissiveMapUV;
++#endif
++
++#if @normalMap
++uniform sampler2D normalMap;
++varying vec2 normalMapUV;
++#endif
++
++#if @envMap
++uniform sampler2D envMap;
++varying vec2 envMapUV;
++uniform vec4 envMapColor;
++#endif
++
++#if @specularMap
++uniform sampler2D specularMap;
++varying vec2 specularMapUV;
++#endif
++
++#if @bumpMap
++uniform sampler2D bumpMap;
++varying vec2 bumpMapUV;
++uniform vec2 envMapLumaBias;
++uniform mat2 bumpMapMatrix;
++#endif
++
++#if @glossMap
++uniform sampler2D glossMap;
++varying vec2 glossMapUV;
++#endif
++
++//uniform vec2 screenRes;
++//uniform float near;
++uniform float far;
++uniform float alphaRef;
++uniform float distortionStrength;
++uniform float alpha;
++uniform float actorFade;
++
++#define PER_PIXEL_LIGHTING (@normalMap || @specularMap || @forcePPL)
++
++centroid varying vec4 passColor;
++
++#if !PER_PIXEL_LIGHTING
++centroid varying vec3 shadedLighting;
++centroid varying vec3 shadedSpecular;
++centroid varying vec3 passLighting;
++centroid varying vec3 passSpecular;
++#else
++#include "lib/light/clamp.glsl"
++#endif
++varying vec3 passViewPos;
++varying vec3 passNormal;
++#if @normalMap || @diffuseParallax
++varying vec4 passTangent;
++#endif
++
++#if @additiveBlending
++#define ADDITIVE_BLENDING
++#endif
++
++#include "lib/core/fragment.h.glsl"
++#include "lib/material/parallax.glsl"
++#include "lib/material/alpha.glsl"
++#include "lib/util/distortion.glsl"
++
++#include "fog.glsl"
++#include "lib/material/vertexcolors.glsl"
++#include "shadows_fragment.glsl"
++#include "compatibility/normals.glsl"
++
++#if @softParticles
++#include "lib/particle/soft.glsl"
++
++uniform float particleSize;
++uniform bool particleFade;
++uniform float softFalloffDepth;
++#endif
++
++#if @particleOcclusion
++#include "lib/particle/occlusion.glsl"
++uniform sampler2D orthoDepthMap;
++varying vec3 orthoDepthMapCoord;
++#endif
++
++void main()
++{
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++#if @particleOcclusion
++    applyOcclusionDiscard(orthoDepthMapCoord, texture2D(orthoDepthMap, orthoDepthMapCoord.xy * 0.5 + 0.5).r);
++#endif
++
++    Material material = getMaterial();
++
++    // only offset diffuse and normal maps for now, other textures are more likely to be using a completely different UV set
++    vec2 offset = vec2(0.0);
++
++#if @parallax || @diffuseParallax
++#if @parallax
++    float height = texture2D(normalMap, normalMapUV).a;
++#else
++    float height = texture2D(diffuseMap, diffuseMapUV).a;
++#endif
++    offset = getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height);
++#endif
++
++vec2 screenCoords = gl_FragCoord.xy / screenRes;
++
++#if @diffuseMap
++    Color0 = texture2D(diffuseMap, diffuseMapUV + offset);
++
++#if defined(DISTORTION) && DISTORTION
++    Color0.a *= getDiffuseColor(material, passColor).a;
++    Color0 = applyDistortion(Color0, distortionStrength, gl_FragCoord.z, sampleOpaqueDepthTex(screenCoords / @distorionRTRatio).x);
++    return;
++#endif
++
++#if @diffuseParallax
++    Color0.a = 1.0;
++#else
++    Color0.a *= coveragePreservingAlphaScale(diffuseMap, diffuseMapUV + offset);
++#endif
++#else
++    Color0 = vec4(1.0);
++#endif
++
++    vec4 diffuseColor = getDiffuseColor(material, passColor);
++    Color0.a *= diffuseColor.a * alpha * actorFade;
++
++#if @darkMap
++    Color0 *= texture2D(darkMap, darkMapUV);
++    Color0.a *= coveragePreservingAlphaScale(darkMap, darkMapUV);
++#endif
++
++    Color0.a = alphaTest(Color0.a, alphaRef);
++
++#if @normalMap
++    vec4 normalTex = texture2D(normalMap, normalMapUV + offset);
++    vec3 normal = normalTex.xyz * 2.0 - 1.0;
++#if @reconstructNormalZ
++    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
++#endif
++    vec3 viewNormal = normalToView(normal);
++#else
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++#endif
++
++    vec3 viewVec = normalize(passViewPos);
++
++#if @detailMap
++    Color0.xyz *= texture2D(detailMap, detailMapUV).xyz * 2.0;
++#endif
++
++#if @decalMap
++    vec4 decalTex = texture2D(decalMap, decalMapUV);
++    Color0.xyz = mix(Color0.xyz, decalTex.xyz, decalTex.a * diffuseColor.a);
++#endif
++
++#if @envMap
++
++    vec2 envTexCoordGen = envMapUV;
++    float envLuma = 1.0;
++
++#if @normalMap
++    // if using normal map + env map, take advantage of per-pixel normals for envTexCoordGen
++    vec3 r = reflect( viewVec, viewNormal );
++    float m = 2.0 * sqrt( r.x*r.x + r.y*r.y + (r.z+1.0)*(r.z+1.0) );
++    envTexCoordGen = vec2(r.x/m + 0.5, r.y/m + 0.5);
++#endif
++
++#if @bumpMap
++    vec4 bumpTex = texture2D(bumpMap, bumpMapUV);
++    envTexCoordGen += bumpTex.rg * bumpMapMatrix;
++    envLuma = clamp(bumpTex.b * envMapLumaBias.x + envMapLumaBias.y, 0.0, 1.0);
++#endif
++
++    vec3 envEffect = texture2D(envMap, envTexCoordGen).xyz * envMapColor.xyz * envLuma;
++
++#if @glossMap
++    envEffect *= texture2D(glossMap, glossMapUV).xyz;
++#endif
++
++#if @preLightEnv
++    Color0.xyz += envEffect;
++#endif
++
++#endif
++
++    float shadowing = unshadowedLightRatio(-passViewPos.z);
++    vec3 lighting, specular;
++#if !PER_PIXEL_LIGHTING
++    lighting = mix(shadedLighting, passLighting, shadowing);
++    specular = mix(shadedSpecular, passSpecular, shadowing);
++#else
++#if @specularMap
++    vec4 specTex = texture2D(specularMap, specularMapUV);
++    float shininess = specTex.a * 255.0;
++    vec3 specularColor = specTex.xyz;
++#else
++    float shininess = material.shininess;
++    vec3 specularColor = getSpecularColor(material, passColor).xyz;
++#endif
++    vec3 diffuseLight, ambientLight, specularLight;
++
++    doLighting(gl_FragCoord.xy, passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
++
++    lighting = diffuseColor.xyz * diffuseLight + getAmbientColor(material, passColor).xyz * ambientLight + getEmissionColor(material, passColor).xyz * material.emissiveMult;
++    specular = specularColor * specularLight * material.specStrength;
++    clampLighting(lighting);
++#endif
++
++    Color0.xyz = Color0.xyz * lighting + specular;
++
++#if @envMap && !@preLightEnv
++    Color0.xyz += envEffect;
++#endif
++
++#if @emissiveMap
++    Color0.xyz += texture2D(emissiveMap, emissiveMapUV).xyz;
++#endif
++
++    Color0 = applyFogAtPos(Color0, passViewPos, near, far);
++
++#if !defined(FORCE_OPAQUE) && @softParticles
++    Color0.a *= calcSoftParticleFade(
++        viewVec,
++        passViewPos,
++        viewNormal,
++        near,
++        far,
++        sampleOpaqueDepthTex(screenCoords).x,
++        particleSize,
++        particleFade,
++        softFalloffDepth,
++        waterEnabled,
++        isReflection,
++        waterHeight,
++        osg_ViewMatrixInverse
++    );
++#endif
++
++#if defined(FORCE_OPAQUE) && FORCE_OPAQUE
++    // having testing & blending isn't enough - we need to write an opaque pixel to be opaque
++    Color0.a = 1.0;
++#endif
++
++#if !defined(FORCE_OPAQUE) && !@disableNormals
++    Color1.xyz = viewNormal * 0.5 + 0.5;
++#endif
++
++    applyShadowDebugOverlay();
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/objects.vert b/files/shaders/gles/compatibility/objects.vert
+index e69de29bb2..81e0825426 100755
+--- a/files/shaders/gles/compatibility/objects.vert
++++ b/files/shaders/gles/compatibility/objects.vert
+@@ -0,0 +1,222 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#if @diffuseMap
++varying vec2 diffuseMapUV;
++uniform mat4 texMat@diffuseMapUV;
++#endif
++
++#if @darkMap
++varying vec2 darkMapUV;
++uniform mat4 texMat@darkMapUV;
++#endif
++
++#if @detailMap
++varying vec2 detailMapUV;
++uniform mat4 texMat@detailMapUV;
++#endif
++
++#if @decalMap
++varying vec2 decalMapUV;
++uniform mat4 texMat@decalMapUV;
++#endif
++
++#if @emissiveMap
++varying vec2 emissiveMapUV;
++uniform mat4 texMat@emissiveMapUV;
++#endif
++
++#if @normalMap
++varying vec2 normalMapUV;
++uniform mat4 texMat@normalMapUV;
++#endif
++
++#if @envMap
++varying vec2 envMapUV;
++uniform mat4 texMat@envMapUV;
++#endif
++
++#if @bumpMap
++varying vec2 bumpMapUV;
++uniform mat4 texMat@bumpMapUV;
++#endif
++
++#if @specularMap
++varying vec2 specularMapUV;
++uniform mat4 texMat@specularMapUV;
++#endif
++
++#if @glossMap
++varying vec2 glossMapUV;
++uniform mat4 texMat@glossMapUV;
++#endif
++
++#define PER_PIXEL_LIGHTING (@normalMap || @specularMap || @forcePPL)
++
++#if !PER_PIXEL_LIGHTING
++centroid varying vec3 shadedLighting;
++centroid varying vec3 shadedSpecular;
++centroid varying vec3 passLighting;
++centroid varying vec3 passSpecular;
++#include "lib/light/clamp.glsl"
++#endif
++varying vec3 passViewPos;
++varying vec3 passNormal;
++#if @normalMap || @diffuseParallax
++varying vec4 passTangent;
++#endif
++
++#include "lib/core/vertex.h.glsl"
++
++#include "lib/material/vertexcolors.glsl"
++#include "shadows_vertex.glsl"
++#include "compatibility/normals.glsl"
++#include "lib/view/depth.glsl"
++
++#if @particleOcclusion
++varying vec3 orthoDepthMapCoord;
++
++uniform mat4 depthSpaceMatrix;
++uniform mat4 osg_ViewMatrixInverse;
++#endif
++
++//uniform vec2 screenRes;
++
++centroid varying vec4 passColor;
++
++void main(void)
++{
++    Material material = getMaterial();
++
++#if @particleOcclusion
++    mat4 model = osg_ViewMatrixInverse * osg_ModelViewMatrix;
++    orthoDepthMapCoord = ((depthSpaceMatrix * model) * vec4(osg_Vertex.xyz, 1.0)).xyz;
++#endif
++
++    gl_Position = modelToClip(osg_Vertex);
++
++    vec4 viewPos = modelToView(osg_Vertex);
++    applyClipPlanes(viewPos);
++    passColor = osg_Color;
++    passViewPos = viewPos.xyz;
++    passNormal = osg_Normal.xyz;
++    normalToViewMatrix = osg_NormalMatrix;
++
++#if @normalMap || @diffuseParallax
++    passTangent = osg_MultiTexCoord7.xyzw;
++    normalToViewMatrix *= generateTangentSpace(passTangent, passNormal);
++#endif
++
++#if @envMap || !PER_PIXEL_LIGHTING || @shadows_enabled
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++#endif
++
++#if @envMap
++    vec3 viewVec = normalize(viewPos.xyz);
++    vec3 r = reflect( viewVec, viewNormal );
++    float m = 2.0 * sqrt( r.x*r.x + r.y*r.y + (r.z+1.0)*(r.z+1.0) );
++    envMapUV = vec2(r.x/m + 0.5, r.y/m + 0.5);
++#endif
++
++#if @diffuseMap
++    diffuseMapUV = (texMat@diffuseMapUV * osg_MultiTexCoord@diffuseMapUV).xy;
++#endif
++
++#if @darkMap
++    darkMapUV = (texMat@darkMapUV * osg_MultiTexCoord@darkMapUV).xy;
++#endif
++
++#if @detailMap
++    detailMapUV = (texMat@detailMapUV * osg_MultiTexCoord@detailMapUV).xy;
++#endif
++
++#if @decalMap
++    decalMapUV = (texMat@decalMapUV * osg_MultiTexCoord@decalMapUV).xy;
++#endif
++
++#if @emissiveMap
++    emissiveMapUV = (texMat@emissiveMapUV * osg_MultiTexCoord@emissiveMapUV).xy;
++#endif
++
++#if @normalMap
++    normalMapUV = (texMat@normalMapUV * osg_MultiTexCoord@normalMapUV).xy;
++#endif
++
++#if @bumpMap
++    bumpMapUV = (texMat@bumpMapUV * osg_MultiTexCoord@bumpMapUV).xy;
++#endif
++
++#if @specularMap
++    specularMapUV = (texMat@specularMapUV * osg_MultiTexCoord@specularMapUV).xy;
++#endif
++
++#if @glossMap
++    glossMapUV = (texMat@glossMapUV * osg_MultiTexCoord@glossMapUV).xy;
++#endif
++
++#if !PER_PIXEL_LIGHTING
++    vec3 emissionColor = getEmissionColor(material, passColor).rgb;
++    if (skipLighting(material, passColor))
++    {
++        shadedLighting = passLighting = emissionColor * material.emissiveMult;
++        shadedSpecular = passSpecular = vec3(0.0);
++    }
++    else
++    {
++        // Handles edge case of off-screen vertices with clustered shading not being lit due to not mapping to any cluster
++        vec2 screenCoord = clamp(clipToScreen(gl_Position), vec2(0.0), screenRes - vec2(1.0));
++        float shininess = max(1e-4, material.shininess);
++        vec3 viewDir = normalize(passViewPos);
++        vec3 diffuseColor = getDiffuseColor(material, passColor).rgb;
++        vec3 ambientColor = getAmbientColor(material, passColor).rgb;
++        vec3 specularColor = getSpecularColor(material, passColor).rgb;
++
++        vec3 sunDiffuse, sunAmbient, sunSpecular, pointDiffuse, pointAmbient, pointSpecular;
++        directionalLighting(viewDir, viewNormal, shininess, sunDiffuse, sunAmbient, sunSpecular);
++        pointLighting(screenCoord, viewDir, passViewPos, viewNormal, shininess, pointDiffuse, pointAmbient, pointSpecular);
++        shadedLighting = diffuseColor * pointDiffuse + ambientColor * (pointAmbient + sunAmbient) + emissionColor * material.emissiveMult;
++        shadedSpecular = specularColor * pointSpecular * material.specStrength;
++        passLighting = shadedLighting + diffuseColor * sunDiffuse;
++        passSpecular = shadedSpecular + specularColor * sunSpecular * material.specStrength;
++    }
++    clampLighting(shadedLighting);
++    clampLighting(passLighting);
++#endif
++
++#if (@shadows_enabled)
++    setupShadowCoords(viewPos, viewNormal);
++#endif
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/outline.frag b/files/shaders/gles/compatibility/outline.frag
+index e69de29bb2..a90326d197 100755
+--- a/files/shaders/gles/compatibility/outline.frag
++++ b/files/shaders/gles/compatibility/outline.frag
+@@ -0,0 +1,29 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++uniform vec4 color;
++
++void main()
++{
++    Color0 = color;
++}
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/outline.vert b/files/shaders/gles/compatibility/outline.vert
+index e69de29bb2..2d9e535cff 100755
+--- a/files/shaders/gles/compatibility/outline.vert
++++ b/files/shaders/gles/compatibility/outline.vert
+@@ -0,0 +1,36 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#include "lib/core/vertex.h.glsl"
++
++void main(void)
++{
++    gl_Position = modelToClip(osg_Vertex);
++    applyClipPlanes(modelToView(osg_Vertex));
++}
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/ripples_blobber.frag b/files/shaders/gles/compatibility/ripples_blobber.frag
+index e69de29bb2..e9b1e40188 100755
+--- a/files/shaders/gles/compatibility/ripples_blobber.frag
++++ b/files/shaders/gles/compatibility/ripples_blobber.frag
+@@ -0,0 +1,50 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++uniform sampler2D imageIn;
++
++#define MAX_POSITIONS 100
++uniform vec3 positions[MAX_POSITIONS];
++uniform int positionCount;
++
++uniform float osg_SimulationTime;
++uniform vec2 offset;
++
++#include "lib/water/ripples.glsl"
++
++void main()
++{
++    vec2 uv = (gl_FragCoord.xy + offset) / @rippleMapSize;
++
++    vec4 color = texture2D(imageIn, uv);
++    float wavesizeMultiplier = getTemporalWaveSizeMultiplier(osg_SimulationTime);
++    for (int i = 0; i < positionCount; ++i)
++    {
++        float wavesize = wavesizeMultiplier * positions[i].z;
++        float displace = clamp(0.2 * abs(length((positions[i].xy + offset) - gl_FragCoord.xy) / wavesize - 1.0) + 0.8, 0.0, 1.0);
++        color.rg = mix(vec2(-1.0), color.rg, displace);
++    }
++
++    Color0 = color;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/ripples_simulate.frag b/files/shaders/gles/compatibility/ripples_simulate.frag
+index e69de29bb2..0616b78fb0 100755
+--- a/files/shaders/gles/compatibility/ripples_simulate.frag
++++ b/files/shaders/gles/compatibility/ripples_simulate.frag
+@@ -0,0 +1,55 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++uniform sampler2D imageIn;
++
++#include "lib/water/ripples.glsl"
++
++void main()
++{
++    vec2 uv = gl_FragCoord.xy / @rippleMapSize;
++
++    float pixelSize = 1.0 / @rippleMapSize;
++
++    float oneOffset = pixelSize;
++    float oneAndHalfOffset = 1.5 * pixelSize;
++
++    vec4 n = vec4(
++        texture2D(imageIn, uv + vec2(oneOffset, 0.0)).r,
++        texture2D(imageIn, uv + vec2(-oneOffset, 0.0)).r,
++        texture2D(imageIn, uv + vec2(0.0, oneOffset)).r,
++        texture2D(imageIn, uv + vec2(0.0, -oneOffset)).r
++    );
++
++    vec4 n2 = vec4(
++        texture2D(imageIn, uv + vec2(oneAndHalfOffset, 0.0)).r,
++        texture2D(imageIn, uv + vec2(-oneAndHalfOffset, 0.0)).r,
++        texture2D(imageIn, uv + vec2(0.0, oneAndHalfOffset)).r,
++        texture2D(imageIn, uv + vec2(0.0, -oneAndHalfOffset)).r
++    );
++
++    vec4 color = texture2D(imageIn, uv);
++
++    Color0 = applySprings(color, n, n2);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/shadowcasting.frag b/files/shaders/gles/compatibility/shadowcasting.frag
+index e69de29bb2..c2b2b1af7f 100755
+--- a/files/shaders/gles/compatibility/shadowcasting.frag
++++ b/files/shaders/gles/compatibility/shadowcasting.frag
+@@ -0,0 +1,60 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#include "lib/core/fragment.h.glsl"
++
++uniform sampler2D diffuseMap;
++varying vec2 diffuseMapUV;
++
++varying float alphaPassthrough;
++
++uniform bool useDiffuseMapForShadowAlpha;
++uniform bool alphaTestShadows;
++uniform float alphaRef;
++
++#include "lib/material/alpha.glsl"
++
++void main()
++{
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++    Color0.rgb = vec3(1.0);
++    if (useDiffuseMapForShadowAlpha)
++        Color0.a = texture2D(diffuseMap, diffuseMapUV).a * alphaPassthrough;
++    else
++        Color0.a = alphaPassthrough;
++
++    Color0.a = alphaTest(Color0.a, alphaRef);
++
++    // Prevent translucent things casting shadow (including the player using an invisibility effect).
++    // This replaces alpha blending, which obviously doesn't work with depth buffers
++    if (alphaTestShadows && Color0.a <= 0.5)
++        discard;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/shadowcasting.vert b/files/shaders/gles/compatibility/shadowcasting.vert
+index e69de29bb2..4aa756d5c2 100755
+--- a/files/shaders/gles/compatibility/shadowcasting.vert
++++ b/files/shaders/gles/compatibility/shadowcasting.vert
+@@ -0,0 +1,68 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#include "lib/core/vertex.h.glsl"
++#include "lib/material/colormodes.glsl"
++
++varying vec2 diffuseMapUV;
++
++varying float alphaPassthrough;
++
++uniform bool useTreeAnim;
++uniform bool useDiffuseMapForShadowAlpha;
++uniform bool alphaTestShadows;
++uniform float alpha;
++uniform float actorFade;
++uniform mat4 texMat0;
++
++void main(void)
++{
++    Material material = getMaterial();
++
++    gl_Position = osg_ModelViewProjectionMatrix * osg_Vertex;
++
++#if !@useDepthClamp
++    gl_Position.z = max(gl_Position.z, -gl_Position.w);
++#endif
++    vec4 viewPos = (osg_ModelViewMatrix * osg_Vertex);
++    applyClipPlanes(viewPos);
++
++    if (useDiffuseMapForShadowAlpha)
++        diffuseMapUV = (texMat0 * osg_MultiTexCoord0).xy;
++    else
++        diffuseMapUV = vec2(0.0); // Avoid undefined behaviour if running on hardware predating the concept of dynamically uniform expressions
++    if (material.vertexColorMode == ColorMode_AmbientAndDiffuse)
++        alphaPassthrough = useTreeAnim ? 1.0 : osg_Color.a;
++    else
++        // This is uniform, so if it's too low, we might be able to put the position/clip vertex outside the view frustum and skip the fragment shader and rasteriser
++        alphaPassthrough = material.diffuse.a;
++
++    alphaPassthrough *= actorFade * alpha;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/shadows_fragment.glsl b/files/shaders/gles/compatibility/shadows_fragment.glsl
+index e69de29bb2..85cdb6f10a 100755
+--- a/files/shaders/gles/compatibility/shadows_fragment.glsl
++++ b/files/shaders/gles/compatibility/shadows_fragment.glsl
+@@ -0,0 +1,83 @@
++#define SHADOWS @shadows_enabled
++
++#if SHADOWS
++    uniform float maximumShadowMapDistance;
++    uniform float shadowFadeStart;
++    @foreach shadow_texture_unit_index @shadow_texture_unit_list
++        uniform sampler2DShadow shadowTexture@shadow_texture_unit_index;
++        varying vec4 shadowSpaceCoords@shadow_texture_unit_index;
++
++#if @perspectiveShadowMaps
++        varying vec4 shadowRegionCoords@shadow_texture_unit_index;
++#endif
++    @endforeach
++#endif // SHADOWS
++
++float unshadowedLightRatio(float distance)
++{
++    float shadowing = 1.0;
++#if SHADOWS
++#if @limitShadowMapDistance
++    float fade = clamp((distance - shadowFadeStart) / (maximumShadowMapDistance - shadowFadeStart), 0.0, 1.0);
++    if (fade == 1.0)
++        return shadowing;
++#endif
++    bool doneShadows = false;
++    @foreach shadow_texture_unit_index @shadow_texture_unit_list
++        if (!doneShadows)
++        {
++            vec3 shadowXYZ = shadowSpaceCoords@shadow_texture_unit_index.xyz / shadowSpaceCoords@shadow_texture_unit_index.w;
++#if @perspectiveShadowMaps
++            vec3 shadowRegionXYZ = shadowRegionCoords@shadow_texture_unit_index.xyz / shadowRegionCoords@shadow_texture_unit_index.w;
++#endif
++            if (all(lessThan(shadowXYZ.xy, vec2(1.0, 1.0))) && all(greaterThan(shadowXYZ.xy, vec2(0.0, 0.0))))
++            {
++                shadowing = min(shadow2DProj(shadowTexture@shadow_texture_unit_index, shadowSpaceCoords@shadow_texture_unit_index).r, shadowing);
++
++                doneShadows = all(lessThan(shadowXYZ, vec3(0.95, 0.95, 1.0))) && all(greaterThan(shadowXYZ, vec3(0.05, 0.05, 0.0)));
++#if @perspectiveShadowMaps
++                doneShadows = doneShadows && all(lessThan(shadowRegionXYZ, vec3(1.0, 1.0, 1.0))) && all(greaterThan(shadowRegionXYZ.xy, vec2(-1.0, -1.0)));
++#endif
++            }
++        }
++    @endforeach
++#if @limitShadowMapDistance
++    shadowing = mix(shadowing, 1.0, fade);
++#endif
++#endif // SHADOWS
++    return shadowing;
++}
++
++void applyShadowDebugOverlay()
++{
++#if SHADOWS && @useShadowDebugOverlay
++    bool doneOverlay = false;
++    float colourIndex = 0.0;
++    @foreach shadow_texture_unit_index @shadow_texture_unit_list
++        if (!doneOverlay)
++        {
++            vec3 shadowXYZ = shadowSpaceCoords@shadow_texture_unit_index.xyz / shadowSpaceCoords@shadow_texture_unit_index.w;
++#if @perspectiveShadowMaps
++            vec3 shadowRegionXYZ = shadowRegionCoords@shadow_texture_unit_index.xyz / shadowRegionCoords@shadow_texture_unit_index.w;
++#endif
++            if (all(lessThan(shadowXYZ.xy, vec2(1.0, 1.0))) && all(greaterThan(shadowXYZ.xy, vec2(0.0, 0.0))))
++            {
++                colourIndex = mod(@shadow_texture_unit_index.0, 3.0);
++                if (colourIndex < 1.0)
++                    Color0.x += 0.1;
++                else if (colourIndex < 2.0)
++                    Color0.y += 0.1;
++                else
++                    Color0.z += 0.1;
++
++                doneOverlay = all(lessThan(shadowXYZ, vec3(0.95, 0.95, 1.0))) && all(greaterThan(shadowXYZ, vec3(0.05, 0.05, 0.0)));
++#if @perspectiveShadowMaps
++                doneOverlay = doneOverlay && all(lessThan(shadowRegionXYZ.xyz, vec3(1.0, 1.0, 1.0))) && all(greaterThan(shadowRegionXYZ.xy, vec2(-1.0, -1.0)));
++#endif
++            }
++        }
++    @endforeach
++#endif // SHADOWS
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/shadows_vertex.glsl b/files/shaders/gles/compatibility/shadows_vertex.glsl
+index e69de29bb2..287c1fee83 100755
+--- a/files/shaders/gles/compatibility/shadows_vertex.glsl
++++ b/files/shaders/gles/compatibility/shadows_vertex.glsl
+@@ -0,0 +1,49 @@
++#define SHADOWS @shadows_enabled
++
++#if SHADOWS
++    @foreach shadow_texture_unit_index @shadow_texture_unit_list
++        uniform mat4 shadowSpaceMatrix@shadow_texture_unit_index;
++        varying vec4 shadowSpaceCoords@shadow_texture_unit_index;
++
++#if @perspectiveShadowMaps
++        uniform mat4 validRegionMatrix@shadow_texture_unit_index;
++        varying vec4 shadowRegionCoords@shadow_texture_unit_index;
++#endif
++    @endforeach
++
++    // Enabling this may reduce peter panning. Probably unnecessary.
++    const bool onlyNormalOffsetUV = false;
++#endif // SHADOWS
++
++void setupShadowCoords(vec4 viewPos, vec3 viewNormal)
++{
++#if SHADOWS
++    vec4 shadowOffset;
++    @foreach shadow_texture_unit_index @shadow_texture_unit_list
++#if @perspectiveShadowMaps
++        shadowRegionCoords@shadow_texture_unit_index = validRegionMatrix@shadow_texture_unit_index * viewPos;
++#endif
++
++#if @disableNormalOffsetShadows
++        shadowSpaceCoords@shadow_texture_unit_index = shadowSpaceMatrix@shadow_texture_unit_index * viewPos;
++#else
++        shadowOffset = vec4(viewNormal * @shadowNormalOffset, 0.0);
++
++        if (onlyNormalOffsetUV)
++        {
++            vec4 lightSpaceXY = viewPos + shadowOffset;
++            lightSpaceXY = shadowSpaceMatrix@shadow_texture_unit_index * lightSpaceXY;
++
++            shadowSpaceCoords@shadow_texture_unit_index.xy = lightSpaceXY.xy;
++        }
++        else
++        {
++            vec4 offsetViewPosition = viewPos + shadowOffset;
++            shadowSpaceCoords@shadow_texture_unit_index = shadowSpaceMatrix@shadow_texture_unit_index * offsetViewPosition;
++        }
++#endif
++    @endforeach
++#endif // SHADOWS
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/sky.frag b/files/shaders/gles/compatibility/sky.frag
+index e69de29bb2..59881b4e28 100755
+--- a/files/shaders/gles/compatibility/sky.frag
++++ b/files/shaders/gles/compatibility/sky.frag
+@@ -0,0 +1,146 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#include "lib/sky/passes.glsl"
++
++uniform int pass;
++uniform sampler2D diffuseMap;
++uniform sampler2D maskMap;      // PASS_MOON
++uniform float opacity;          // PASS_CLOUDS, PASS_ATMOSPHERE_NIGHT
++uniform vec2 screenRes;
++uniform vec4 moonBlend;         // PASS_MOON
++uniform vec4 atmosphereFade;    // PASS_MOON
++uniform vec4 diffuseColor;
++
++#if @skyBlending
++uniform sampler2D sky;
++vec3 sampleSkyColor(vec2 uv)
++{
++    return texture2D(sky, uv).xyz;
++}
++#endif
++
++#include "lib/light/struct.glsl"
++uniform DirectionalLight sun;
++
++
++
++#include "fog.glsl"
++
++varying vec2 diffuseMapUV;
++varying vec4 passColor;
++
++void paintAtmosphere(inout vec4 color)
++{
++    color = diffuseColor;
++    color.a *= passColor.a;
++}
++
++void paintAtmosphereNight(inout vec4 color)
++{
++    color = texture2D(diffuseMap, diffuseMapUV);
++    color.a *= passColor.a * opacity;
++}
++
++void paintClouds(inout vec4 color)
++{
++    color = texture2D(diffuseMap, diffuseMapUV);
++    color.a *= passColor.a * opacity;
++    color.xyz = clamp(color.xyz * diffuseColor.xyz, 0.0, 1.0);
++
++    // ease transition between clear color and atmosphere/clouds
++    color = mix(vec4(fog.color.xyz, color.a), color, passColor.a);
++}
++
++void paintMoon(inout vec4 color)
++{
++    vec4 phase = texture2D(diffuseMap, diffuseMapUV);
++    vec4 mask = texture2D(maskMap, diffuseMapUV);
++
++    // Morrowind does this in two passes
++
++    // First pass: moon shadow, normal blending (src alpha, 1 - src alpha)
++    // dst.rgb = mask.rgb * mask.a + dst.rgb * (1 - mask.a)
++    // Second pass: moon phase, additive blending (src alpha, 1)
++    // dst.rgb += phase.rgb * phase.a
++
++    // The same is doable in a single pass through premultiplied alpha blending
++    // color.rgb = mask.rgb * mask.a + phase.rgb * phase.a
++    // color.a = mask.a
++    // dst.rgb = color.rgb + dst.rgb * (1 - color.a)
++
++    vec3 maskTinted = mask.rgb * atmosphereFade.rgb;
++    float maskAlpha = mask.a * atmosphereFade.a;
++    vec3 phaseTinted = phase.rgb * moonBlend.rgb;
++    float phaseAlpha = phase.a * atmosphereFade.a;
++
++    color.rgb = maskTinted * maskAlpha + phaseTinted * phaseAlpha;
++    color.a = maskAlpha;
++}
++
++void paintSun(inout vec4 color)
++{
++    color = texture2D(diffuseMap, diffuseMapUV);
++    color.a *= opacity;
++}
++
++void paintSunglare(inout vec4 color)
++{
++    color = diffuseColor;
++}
++
++void processSunflashQuery()
++{
++    const float threshold = 0.8;
++
++    if (texture2D(diffuseMap, diffuseMapUV).a <= threshold)
++        discard;
++}
++
++void main()
++{
++    vec4 color = vec4(0.0);
++
++    if (pass == PASS_ATMOSPHERE)
++        paintAtmosphere(color);
++    else if (pass == PASS_ATMOSPHERE_NIGHT)
++        paintAtmosphereNight(color);
++    else if (pass == PASS_CLOUDS)
++        paintClouds(color);
++    else if (pass == PASS_MOON)
++        paintMoon(color);
++    else if (pass == PASS_SUN)
++        paintSun(color);
++    else if (pass == PASS_SUNGLARE)
++        paintSunglare(color);
++    else if (pass == PASS_SUNFLASH_QUERY)
++    {
++        processSunflashQuery();
++        return;
++    }
++
++    Color0 = color;
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/sky.vert b/files/shaders/gles/compatibility/sky.vert
+index e69de29bb2..9dc4a290f7 100755
+--- a/files/shaders/gles/compatibility/sky.vert
++++ b/files/shaders/gles/compatibility/sky.vert
+@@ -0,0 +1,50 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#include "lib/core/vertex.h.glsl"
++
++#include "lib/sky/passes.glsl"
++
++uniform int pass;
++uniform mat4 texMat0;
++
++varying vec4 passColor;
++varying vec2 diffuseMapUV;
++
++void main()
++{
++    gl_Position = modelToClip(osg_Vertex);
++    passColor = osg_Color;
++
++    if (pass == PASS_CLOUDS)
++        diffuseMapUV = (texMat0 * osg_MultiTexCoord0).xy;
++    else
++        diffuseMapUV = osg_MultiTexCoord0.xy;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/terrain.frag b/files/shaders/gles/compatibility/terrain.frag
+index e69de29bb2..74692f4688 100755
+--- a/files/shaders/gles/compatibility/terrain.frag
++++ b/files/shaders/gles/compatibility/terrain.frag
+@@ -0,0 +1,143 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++varying vec2 uv;
++
++uniform sampler2D diffuseMap;
++
++#if @normalMap
++uniform sampler2D normalMap;
++#endif
++
++#if @blendMap
++uniform sampler2D blendMap;
++#endif
++
++varying float euclideanDepth;
++varying float linearDepth;
++
++#define PER_PIXEL_LIGHTING (@normalMap || @specularMap || @forcePPL)
++
++#if !PER_PIXEL_LIGHTING
++centroid varying vec3 shadedLighting;
++centroid varying vec3 shadedSpecular;
++centroid varying vec3 passLighting;
++centroid varying vec3 passSpecular;
++#else
++#include "lib/light/clamp.glsl"
++#endif
++varying vec3 passViewPos;
++varying vec3 passNormal;
++
++//uniform vec2 screenRes;
++//uniform float near;
++uniform float far;
++
++uniform mat4 texMat0;
++uniform mat4 texMat1;
++
++#include "lib/core/fragment.h.glsl"
++
++#include "lib/material/vertexcolors.glsl"
++#include "shadows_fragment.glsl"
++
++#include "lib/material/parallax.glsl"
++#include "fog.glsl"
++#include "compatibility/normals.glsl"
++
++centroid varying vec4 passColor;
++
++void main()
++{
++#if @useClipDistanceFallback
++    applyClipPlanes();
++#endif
++
++    Material material = getMaterial();
++
++    vec2 adjustedUV = (texMat0 * vec4(uv, 0.0, 1.0)).xy;
++
++#if @parallax
++    float height = texture2D(normalMap, adjustedUV).a;
++    adjustedUV += getParallaxOffset(transpose(normalToViewMatrix) * normalize(-passViewPos), height);
++#endif
++    vec4 diffuseTex = texture2D(diffuseMap, adjustedUV);
++    Color0 = vec4(diffuseTex.xyz, 1.0);
++
++    vec4 diffuseColor = getDiffuseColor(material, passColor);
++    Color0.a *= diffuseColor.a;
++
++#if @blendMap
++    vec2 blendMapUV = (texMat1 * vec4(uv, 0.0, 1.0)).xy;
++    Color0.a *= texture2D(blendMap, blendMapUV).a;
++#endif
++
++#if @normalMap
++    vec4 normalTex = texture2D(normalMap, adjustedUV);
++    vec3 normal = normalTex.xyz * 2.0 - 1.0;
++#if @reconstructNormalZ
++    normal.z = sqrt(1.0 - dot(normal.xy, normal.xy));
++#endif
++    vec3 viewNormal = normalToView(normal);
++#else
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++#endif
++
++    float shadowing = unshadowedLightRatio(linearDepth);
++    vec3 lighting, specular;
++#if !PER_PIXEL_LIGHTING
++    lighting = mix(shadedLighting, passLighting, shadowing);
++    specular = mix(shadedSpecular, passSpecular, shadowing);
++#else
++#if @specularMap
++    float shininess = 128.0; // TODO: make configurable
++    vec3 specularColor = vec3(diffuseTex.a);
++#else
++    float shininess = material.shininess;
++    vec3 specularColor = getSpecularColor(material, passColor).xyz;
++#endif
++    vec3 diffuseLight, ambientLight, specularLight;
++    doLighting(gl_FragCoord.xy, passViewPos, viewNormal, shininess, shadowing, diffuseLight, ambientLight, specularLight);
++    lighting = diffuseColor.xyz * diffuseLight + getAmbientColor(material, passColor).xyz * ambientLight + getEmissionColor(material, passColor).xyz;
++    specular = specularColor * specularLight;
++    clampLighting(lighting);
++#endif
++
++    Color0.xyz = Color0.xyz * lighting + specular;
++
++    Color0 = applyFogAtDist(Color0, passViewPos, euclideanDepth, linearDepth, near, far);
++
++#if !@disableNormals
++    // Terrain normals are now additively blended the same way as terrain color is, thus using color's alpha.
++    Color1 = vec4(viewNormal * 0.5 + 0.5, Color0.a);
++#endif
++
++    applyShadowDebugOverlay();
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/terrain.vert b/files/shaders/gles/compatibility/terrain.vert
+index e69de29bb2..7273416037 100755
+--- a/files/shaders/gles/compatibility/terrain.vert
++++ b/files/shaders/gles/compatibility/terrain.vert
+@@ -0,0 +1,111 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#include "lib/core/vertex.h.glsl"
++varying vec2 uv;
++varying float euclideanDepth;
++varying float linearDepth;
++
++#define PER_PIXEL_LIGHTING (@normalMap || @specularMap || @forcePPL)
++
++#if !PER_PIXEL_LIGHTING
++centroid varying vec3 shadedLighting;
++centroid varying vec3 shadedSpecular;
++centroid varying vec3 passLighting;
++centroid varying vec3 passSpecular;
++#include "lib/light/clamp.glsl"
++#endif
++
++varying vec3 passViewPos;
++varying vec3 passNormal;
++
++#include "lib/material/vertexcolors.glsl"
++#include "shadows_vertex.glsl"
++#include "compatibility/normals.glsl"
++
++#include "lib/view/depth.glsl"
++
++centroid varying vec4 passColor;
++
++void main(void)
++{
++    Material material = getMaterial();
++
++    gl_Position = modelToClip(osg_Vertex);
++
++    vec4 viewPos = modelToView(osg_Vertex);
++    applyClipPlanes(viewPos);
++    euclideanDepth = length(viewPos.xyz);
++    linearDepth = getLinearDepth(gl_Position.z, viewPos.z);
++
++    passColor = osg_Color;
++    passNormal = osg_Normal.xyz;
++    passViewPos = viewPos.xyz;
++    normalToViewMatrix = osg_NormalMatrix;
++
++#if @normalMap
++    mat3 tbnMatrix = generateTangentSpace(vec4(1.0, 0.0, 0.0, 1.0), passNormal);
++    tbnMatrix[0] = -normalize(cross(tbnMatrix[2], tbnMatrix[1])); // our original tangent was not at a 90 degree angle to the normal, so we need to rederive it
++    normalToViewMatrix *= tbnMatrix;
++#endif
++
++#if !PER_PIXEL_LIGHTING || @shadows_enabled
++    vec3 viewNormal = normalize(osg_NormalMatrix * passNormal);
++#endif
++
++#if !PER_PIXEL_LIGHTING
++    float shininess = max(1e-4, material.shininess);
++    vec3 viewDir = passViewPos / euclideanDepth;
++    vec3 diffuseColor = getDiffuseColor(material, passColor).rgb;
++    vec3 ambientColor = getAmbientColor(material, passColor).rgb;
++    vec3 emissionColor = getEmissionColor(material, passColor).rgb;
++    vec3 specularColor = getSpecularColor(material, passColor).rgb;
++
++    vec3 sunDiffuse, sunAmbient, sunSpecular, pointDiffuse, pointAmbient, pointSpecular;
++    directionalLighting(viewDir, viewNormal, shininess, sunDiffuse, sunAmbient, sunSpecular);
++    pointLighting(clipToScreen(gl_Position), viewDir, passViewPos, viewNormal, shininess, pointDiffuse, pointAmbient, pointSpecular);
++    shadedLighting = diffuseColor * pointDiffuse + ambientColor * (pointAmbient + sunAmbient) + emissionColor;
++    shadedSpecular = specularColor * pointSpecular;
++    passLighting = shadedLighting + diffuseColor * sunDiffuse;
++    passSpecular = shadedSpecular + specularColor * sunSpecular;
++    clampLighting(shadedLighting);
++    clampLighting(passLighting);
++#endif
++
++    uv = osg_MultiTexCoord0.xy;
++
++#if (@shadows_enabled)
++    setupShadowCoords(viewPos, viewNormal);
++#endif
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/terrain_composite.frag b/files/shaders/gles/compatibility/terrain_composite.frag
+index e69de29bb2..1d82dc5821 100755
+--- a/files/shaders/gles/compatibility/terrain_composite.frag
++++ b/files/shaders/gles/compatibility/terrain_composite.frag
+@@ -0,0 +1,47 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++varying vec2 uv;
++
++uniform sampler2D diffuseMap;
++
++uniform mat4 texMat0;
++uniform mat4 texMat1;
++
++#if @blendMap
++uniform sampler2D blendMap;
++#endif
++
++void main()
++{
++    vec2 adjustedUV = (texMat0 * vec4(uv, 0.0, 1.0)).xy;
++
++    vec4 diffuseTex = texture2D(diffuseMap, adjustedUV);
++    Color0 = vec4(diffuseTex.xyz, 1.0);
++
++#if @blendMap
++    vec2 blendMapUV = (texMat1 * vec4(uv, 0.0, 1.0)).xy;
++    Color0.a *= texture2D(blendMap, blendMapUV).a;
++#endif
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/terrain_composite.vert b/files/shaders/gles/compatibility/terrain_composite.vert
+index e69de29bb2..6760233f39 100755
+--- a/files/shaders/gles/compatibility/terrain_composite.vert
++++ b/files/shaders/gles/compatibility/terrain_composite.vert
+@@ -0,0 +1,38 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++varying vec2 uv;
++
++void main(void)
++{
++    gl_Position = osg_Vertex;
++
++    uv = osg_MultiTexCoord0.xy;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/water.frag b/files/shaders/gles/compatibility/water.frag
+index e69de29bb2..c5c476d3bb 100755
+--- a/files/shaders/gles/compatibility/water.frag
++++ b/files/shaders/gles/compatibility/water.frag
+@@ -0,0 +1,285 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#include "lib/core/fragment.h.glsl"
++
++// Inspired by Blender GLSL Water by martinsh ( https://devlog-martinsh.blogspot.de/2012/07/waterundewater-shader-wip.html )
++
++// tweakables -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- --
++
++const vec2 BIG_WAVES = vec2(0.1, 0.1); // strength of big waves
++const vec2 MID_WAVES = vec2(0.1, 0.1); // strength of middle sized waves
++const vec2 MID_WAVES_RAIN = vec2(0.2, 0.2);
++const vec2 SMALL_WAVES = vec2(0.1, 0.1); // strength of small waves
++const vec2 SMALL_WAVES_RAIN = vec2(0.3, 0.3);
++
++const float WAVE_CHOPPYNESS = 0.05;                // wave choppyness
++const float WAVE_SCALE = 75.0;                     // overall wave scale
++
++const float BUMP = 0.5;                            // overall water surface bumpiness
++const float BUMP_RAIN = 2.5;
++const float REFL_BUMP = 0.10;                      // reflection distortion amount
++
++#if @sunlightScattering
++const float SCATTER_AMOUNT = 0.3;                  // amount of sunlight scattering
++const vec3 SCATTER_COLOUR = vec3(0.0,1.0,0.95);    // colour of sunlight scattering
++const vec3 SUN_EXT = vec3(0.45, 0.55, 0.68);       // sunlight extinction
++#endif
++
++const float SUN_SPEC_FADING_THRESHOLD = 0.15;       // visibility at which sun specularity starts to fade
++const float SPEC_HARDNESS = 256.0;                 // specular highlights hardness
++const float SPEC_BUMPINESS = 5.0;                  // surface bumpiness boost for specular
++const float SPEC_BRIGHTNESS = 1.5;                 // boosts the brightness of the specular highlights
++
++const float VISIBILITY = 2500.0;
++const float BUMP_SUPPRESS_DEPTH = 300.0;           // at what water depth bumpmap will be suppressed for reflections and refractions (prevents artifacts at shores)
++const float REFR_FOG_DISTORT_DISTANCE = 3000.0;    // at what distance refraction fog will be calculated using real water depth instead of distorted depth (prevents splotchy shores)
++
++const vec2 WIND_DIR = vec2(0.5f, -0.8f);
++const float WIND_SPEED = 0.2f;
++
++#if @wobblyShores
++const float WOBBLY_SHORE_FADE_DISTANCE = 6200.0;   // fade out wobbly shores to mask precision errors, the effect is almost impossible to see at a distance
++#endif
++
++// -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -- -
++
++vec2 normalCoords(vec2 uv, float scale, float speed, float time, float timer1, float timer2, vec3 previousNormal)
++{
++  return uv * (WAVE_SCALE * scale) + WIND_DIR * time * (WIND_SPEED * speed) -(previousNormal.xy/previousNormal.zz) * WAVE_CHOPPYNESS + vec2(time * timer1,time * timer2);
++}
++
++uniform sampler2D rippleMap;
++uniform vec3 playerPos;
++
++varying vec3 worldPos;
++
++varying vec2 rippleMapUV;
++
++varying vec4 position;
++varying vec3 passViewPos;
++varying float linearDepth;
++
++uniform sampler2D normalMap;
++
++uniform float osg_SimulationTime;
++
++//uniform float near;
++uniform float far;
++
++uniform float rainIntensity;
++
++//uniform vec2 screenRes;
++
++#define PER_PIXEL_LIGHTING 0
++
++#include "lib/water/fresnel.glsl"
++#include "lib/water/rain_ripples.glsl"
++#include "lib/view/depth.glsl"
++#include "lib/light/struct.glsl"
++
++#include "shadows_fragment.glsl"
++#include "fog.glsl"
++
++bool hasOpaqueGeometry(vec2 coords)
++{
++#if @reverseZ
++    const float clearDepth = 0.0;
++#else
++    const float clearDepth = 1.0;
++#endif
++    vec2 texel = vec2(1.0) / screenRes;
++    float backgroundDepth = 1.0;
++    for (int y = -1; y <= 1; ++y)
++        for (int x = -1; x <= 1; ++x)
++            backgroundDepth = min(backgroundDepth,
++                abs(sampleOpaqueDepthTex(coords + vec2(float(x), float(y)) * texel).r - clearDepth));
++    return backgroundDepth > 0.0;
++}
++
++void main(void)
++{
++    vec2 UV = worldPos.xy / (8192.0*5.0) * 3.0;
++
++    float shadow = unshadowedLightRatio(linearDepth);
++
++    vec2 screenCoords = gl_FragCoord.xy / screenRes;
++
++    #define waterTimer osg_SimulationTime
++
++    vec3 normal0 = 2.0 * texture2D(normalMap,normalCoords(UV, 0.05, 0.04, waterTimer, -0.015, -0.005, vec3(0.0,0.0,0.0))).rgb - 1.0;
++    vec3 normal1 = 2.0 * texture2D(normalMap,normalCoords(UV, 0.1,  0.08, waterTimer,  0.02,   0.015, normal0)).rgb - 1.0;
++    vec3 normal2 = 2.0 * texture2D(normalMap,normalCoords(UV, 0.25, 0.07, waterTimer, -0.04,  -0.03,  normal1)).rgb - 1.0;
++    vec3 normal3 = 2.0 * texture2D(normalMap,normalCoords(UV, 0.5,  0.09, waterTimer,  0.03,   0.04,  normal2)).rgb - 1.0;
++    vec3 normal4 = 2.0 * texture2D(normalMap,normalCoords(UV, 1.0,  0.4,  waterTimer, -0.02,   0.1,   normal3)).rgb - 1.0;
++    vec3 normal5 = 2.0 * texture2D(normalMap,normalCoords(UV, 2.0,  0.7,  waterTimer,  0.1,   -0.06,  normal4)).rgb - 1.0;
++
++    vec4 rainRipple;
++
++    if (rainIntensity > 0.01)
++        rainRipple = rainCombined(position.xy/1000.0, waterTimer) * clamp(rainIntensity, 0.0, 1.0);
++    else
++        rainRipple = vec4(0.0);
++
++    vec3 rippleAdd = rainRipple.xyz * 10.0;
++
++    float distToCenter = length(rippleMapUV - vec2(0.5));
++    float blendClose = smoothstep(0.001, 0.02, distToCenter);
++    float blendFar = 1.0 - smoothstep(0.3, 0.4, distToCenter);
++    float distortionLevel = 2.0;
++    rippleAdd += distortionLevel * vec3(texture2D(rippleMap, rippleMapUV).ba * blendFar * blendClose, 0.0);
++
++    vec2 bigWaves = BIG_WAVES;
++    vec2 midWaves = mix(MID_WAVES, MID_WAVES_RAIN, rainIntensity);
++    vec2 smallWaves = mix(SMALL_WAVES, SMALL_WAVES_RAIN, rainIntensity);
++    float bump = mix(BUMP,BUMP_RAIN,rainIntensity);
++
++    vec3 normal = (normal0 * bigWaves.x + normal1 * bigWaves.y + normal2 * midWaves.x +
++                   normal3 * midWaves.y + normal4 * smallWaves.x + normal5 * smallWaves.y + rippleAdd);
++    normal = normalize(vec3(-normal.x * bump, -normal.y * bump, normal.z));
++
++    vec3 sunWorldDir = normalize((inverse(osg_ModelViewMatrix) * sun.position).xyz);
++    vec3 cameraPos = (inverse(osg_ModelViewMatrix) * vec4(0,0,0,1)).xyz;
++    vec3 viewDir = normalize(position.xyz - cameraPos.xyz);
++
++    float sunFade = length(sun.ambient.xyz);
++
++#if @radialFog
++    float radialDepth = distance(position.xyz, cameraPos);
++#else
++    float radialDepth = 0.0;
++#endif
++
++    float fogScale;
++    vec3 fogOffset;
++    computeFog(passViewPos, radialDepth, linearDepth, near, far, fogScale, fogOffset);
++
++    // fresnel
++    float ior = (cameraPos.z>=0.0)?(1.333/1.0):(1.0/1.333); // air to water; water to air
++    float fresnel = clamp(fresnel_dielectric(viewDir, normal, ior), 0.0, 1.0);
++
++    vec2 reflectionCoordsOffset = normal.xy * REFL_BUMP;
++    vec2 refractionCoordsOffset = vec2(0.0);
++    float depthSample = linearizeDepth(sampleOpaqueDepthTex(screenCoords).r, near, far);
++    float surfaceDepth = linearizeDepth(gl_FragCoord.z, near, far);
++    float realWaterDepth = depthSample - surfaceDepth;  // undistorted water depth in view direction, independent of frustum
++
++#if @waterRefraction
++    refractionCoordsOffset = reflectionCoordsOffset;
++    float depthSampleDistorted = linearizeDepth(sampleOpaqueDepthTex(screenCoords - refractionCoordsOffset).r, near, far);
++    // Don't sample refraction from above water
++    if (depthSampleDistorted <= surfaceDepth)
++        refractionCoordsOffset = vec2(0.0);
++    refractionCoordsOffset *= clamp(realWaterDepth / BUMP_SUPPRESS_DEPTH, 0.0, 1.0);
++#endif
++    // reflection
++    vec3 reflection = sampleReflectionMap(screenCoords + reflectionCoordsOffset).rgb * fogScale + fogOffset;
++
++    vec3 waterColor = WATER_COLOR * sunFade;
++
++    vec4 sunSpec = sun.specular;
++    // alpha component is sun visibility; we want to start fading lighting effects when visibility is low
++    sunSpec.a = min(1.0, sunSpec.a / SUN_SPEC_FADING_THRESHOLD);
++
++    // specular
++    const float SPEC_MAGIC = 1.55; // from the original blender shader, changing it makes the spec vanish or become too bright
++
++    vec3 specNormal = normalize(vec3(normal.x * SPEC_BUMPINESS, normal.y * SPEC_BUMPINESS, normal.z));
++    vec3 viewReflectDir = reflect(viewDir, specNormal);
++    float phongTerm = max(dot(viewReflectDir, sunWorldDir), 0.0);
++    float specular = pow(atan(phongTerm * SPEC_MAGIC), SPEC_HARDNESS) * SPEC_BRIGHTNESS;
++    specular = clamp(specular, 0.0, 1.0) * shadow * sunSpec.a;
++
++    // artificial specularity to make rain ripples more noticeable
++    vec3 skyColorEstimate = vec3(max(0.0, mix(-0.3, 1.0, sunFade)));
++    vec3 rainSpecular = abs(rainRipple.w)*mix(skyColorEstimate, vec3(1.0), 0.05)*0.5;
++    float waterTransparency = clamp(fresnel * 6.0 + specular, 0.0, 1.0);
++
++    vec3 refraction = waterColor;
++    vec3 rawRefraction = refraction;
++
++    vec2 refractionCoords = screenCoords - refractionCoordsOffset;
++    refraction = sampleOpaqueColorTex(refractionCoords).rgb;
++    rawRefraction = refraction;
++
++    // brighten up the refraction underwater
++    if (cameraPos.z < 0.0)
++        refraction = clamp(refraction * 1.5, 0.0, 1.0);
++
++    if (cameraPos.z >= 0.0)
++    {
++        vec3 deepWaterColor = waterColor * fogScale + fogOffset;
++        if (!hasOpaqueGeometry(refractionCoords))
++            refraction = deepWaterColor;
++        else
++            refraction = mix(refraction, deepWaterColor, clamp(realWaterDepth / VISIBILITY - 1.0, 0.0, 1.0));
++    }
++
++#if @sunlightScattering
++    vec3 scatterNormal = (normal0 * bigWaves.x * 0.5 + normal1 * bigWaves.y * 0.5 + normal2 * midWaves.x * 0.2 +
++                          normal3 * midWaves.y * 0.2 + normal4 * smallWaves.x * 0.1 + normal5 * smallWaves.y * 0.1 + rippleAdd);
++    scatterNormal = normalize(vec3(-scatterNormal.xy * bump, scatterNormal.z));
++    float sunHeight = sunWorldDir.z;
++    vec3 scatterColour = mix(SCATTER_COLOUR * vec3(1.0, 0.4, 0.0), SCATTER_COLOUR, max(1.0 - exp(-sunHeight * SUN_EXT), 0.0));
++    float scatterLambert = max(dot(sunWorldDir, scatterNormal) * 0.7 + 0.3, 0.0);
++    float scatterReflectAngle = max(dot(reflect(sunWorldDir, scatterNormal), viewDir) * 2.0 - 1.2, 0.0);
++    float lightScatter = scatterLambert * scatterReflectAngle * SCATTER_AMOUNT * sunFade * sunSpec.a * max(1.0 - exp(-sunHeight), 0.0);
++    refraction = mix(refraction, scatterColour * fogScale + fogOffset, lightScatter);
++#endif
++
++    Color0.rgb = mix(refraction, reflection, fresnel);
++    Color0.a = 1.0;
++    // no alpha here, so make sure raindrop ripple specularity gets properly subdued
++    rainSpecular *= waterTransparency;
++
++    vec3 pointSpecular = doSpecularLighting(gl_FragCoord.xy, (osg_ModelViewMatrix * vec4(position.xyz, 1.0)).xyz, normalize(osg_NormalMatrix * specNormal));
++    pointSpecular *= SPEC_BRIGHTNESS;
++
++    Color0.rgb += (specular * sunSpec.rgb + rainSpecular + pointSpecular) * fogScale;
++
++#if @wobblyShores
++    // wobbly water: hard-fade into refraction texture at extremely low depth, with a wobble based on normal mapping
++    vec3 normalShoreRippleRain = texture2D(normalMap,normalCoords(UV, 2.0, 2.7, -1.0*waterTimer,  0.05,  0.1,  normal3)).rgb - 0.5
++                               + texture2D(normalMap,normalCoords(UV, 2.0, 2.7,      waterTimer,  0.04, -0.13, normal4)).rgb - 0.5;
++    float viewFactor = mix(abs(viewDir.z), 1.0, 0.2);
++    float verticalWaterDepth = realWaterDepth * viewFactor; // an estimate
++    float shoreOffset = verticalWaterDepth - (normal2.r + mix(0.0, normalShoreRippleRain.r, rainIntensity) + 0.15)*8.0;
++    float fuzzFactor = min(1.0, 1000.0 / surfaceDepth) * viewFactor;
++    shoreOffset *= fuzzFactor;
++    shoreOffset = clamp(mix(shoreOffset, 1.0, clamp(linearDepth / WOBBLY_SHORE_FADE_DISTANCE, 0.0, 1.0)), 0.0, 1.0);
++    Color0.rgb = mix(rawRefraction, Color0.rgb, shoreOffset);
++#endif
++
++#if !@disableNormals
++    Color1.rgb = normalize(osg_NormalMatrix * normal) * 0.5 + 0.5;
++#endif
++
++    applyShadowDebugOverlay();
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/compatibility/water.vert b/files/shaders/gles/compatibility/water.vert
+index e69de29bb2..abad090c37 100755
+--- a/files/shaders/gles/compatibility/water.vert
++++ b/files/shaders/gles/compatibility/water.vert
+@@ -0,0 +1,60 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++#include "lib/core/vertex.h.glsl"
++
++varying vec4  position;
++varying float linearDepth;
++
++#include "shadows_vertex.glsl"
++#include "lib/view/depth.glsl"
++
++uniform vec3 nodePosition;
++uniform vec3 playerPos;
++
++varying vec3 worldPos;
++varying vec2 rippleMapUV;
++varying vec3 passViewPos;
++
++void main(void)
++{
++    gl_Position = modelToClip(osg_Vertex);
++
++    position = osg_Vertex;
++
++    worldPos = position.xyz + nodePosition.xyz;
++    rippleMapUV = (worldPos.xy - playerPos.xy + (@rippleMapSize * @rippleMapWorldScale / 2.0)) / @rippleMapSize / @rippleMapWorldScale;
++
++    vec4 viewPos = modelToView(osg_Vertex);
++    passViewPos = viewPos.xyz;
++    linearDepth = getLinearDepth(gl_Position.z, viewPos.z);
++
++    setupShadowCoords(viewPos, normalize((osg_NormalMatrix * osg_Normal).xyz));
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/core/gui.frag b/files/shaders/gles/core/gui.frag
+index e69de29bb2..71eb58b293 100755
+--- a/files/shaders/gles/core/gui.frag
++++ b/files/shaders/gles/core/gui.frag
+@@ -0,0 +1,37 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++layout(location = 0) out vec4 Color0;
++layout(location = 1) out vec4 Color1;
++#define texture2D texture
++#define texture2DArray texture
++#define textureSize2D textureSize
++#define varying in
++#define shadow2DProj custom_shadow2DProj
++vec4 custom_shadow2DProj(sampler2DShadow sampler, vec4 uv) { return vec4(textureProj(sampler, uv)); }
++//HEADER_END
++
++
++layout (location = 0) in vec4 Position;
++layout (location = 3) in vec4 Color;
++layout (location = 8) in vec3 TexCoord0;
++
++out vec4 passColor;
++out vec2 uv;
++
++void main()
++{
++    gl_Position = vec4(Position.xyz, 1.0);
++    uv = TexCoord0.xy;
++    passColor = Color;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/core/gui.vert b/files/shaders/gles/core/gui.vert
+index e69de29bb2..f1e761403c 100755
+--- a/files/shaders/gles/core/gui.vert
++++ b/files/shaders/gles/core/gui.vert
+@@ -0,0 +1,41 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++in vec4 osg_Vertex;
++in vec3 osg_Normal;
++in vec4 osg_Color;
++in vec4 osg_MultiTexCoord0;
++in vec4 osg_MultiTexCoord1;
++in vec4 osg_MultiTexCoord2;
++in vec4 osg_MultiTexCoord3;
++in vec4 osg_MultiTexCoord4;
++in vec4 osg_MultiTexCoord5;
++in vec4 osg_MultiTexCoord6;
++in vec4 osg_MultiTexCoord7;
++uniform mat4 osg_ModelViewProjectionMatrix;
++uniform mat4 osg_ModelViewMatrix;
++uniform mat3 osg_NormalMatrix;
++#define attribute in
++#define varying out
++//HEADER_END
++
++
++layout(location = 0) out vec4 Color;
++
++layout(location = 0) uniform sampler2D diffuseMap;
++
++in vec4 passColor;
++in vec2 uv;
++
++void main()
++{
++    Color = texture(diffuseMap, uv) * passColor;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/core/lighting/cluster.comp b/files/shaders/gles/core/lighting/cluster.comp
+index e69de29bb2..90ce3e60a9 100755
+--- a/files/shaders/gles/core/lighting/cluster.comp
++++ b/files/shaders/gles/core/lighting/cluster.comp
+@@ -0,0 +1,63 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++layout(local_size_x = 1, local_size_y = 1, local_size_z = 1) in;
++
++#include "lib/light/bindings.glsl"
++
++uniform float near;
++uniform mat4 inverseProjectionMatrix;
++uniform vec3 gridSize;
++uniform vec2 screenRes;
++uniform float clusterFar;
++
++vec3 lineIntersectionWithZPlane(vec3 startPoint, vec3 endPoint, float zDistance)
++{
++    vec3 direction = endPoint - startPoint;
++    vec3 normal = vec3(0.0, 0.0, -1.0);
++
++    float t = (zDistance - dot(normal, startPoint)) / dot(normal, direction);
++    return startPoint + t * direction;
++}
++vec3 screenToView(vec2 screenCoord)
++{
++    vec4 ndc = vec4(screenCoord / screenRes * 2.0 - 1.0, -1.0, 1.0);
++
++    vec4 viewCoord = inverseProjectionMatrix * ndc;
++    viewCoord /= viewCoord.w;
++    return viewCoord.xyz;
++}
++
++void main()
++{
++    uint tileIndex = gl_WorkGroupID.x + (gl_WorkGroupID.y * uint(gridSize.x)) + (gl_WorkGroupID.z * uint(gridSize.x) * uint(gridSize.y));
++    vec2 tileSize = vec2(ivec2(screenRes) / ivec2(gridSize.xy));
++
++    vec2 minTile_screenspace = vec2(gl_WorkGroupID.xy) * tileSize;
++    vec2 maxTile_screenspace = vec2(gl_WorkGroupID.xy + 1u) * tileSize;
++
++    vec3 minTile = screenToView(minTile_screenspace);
++    vec3 maxTile = screenToView(maxTile_screenspace);
++
++    float planeNear = near * pow(clusterFar / near, float(gl_WorkGroupID.z) / gridSize.z);
++    float planeFar = near * pow(clusterFar / near, float(gl_WorkGroupID.z + 1u) / gridSize.z);
++
++    vec3 minPointNear = lineIntersectionWithZPlane(vec3(0, 0, 0), minTile, planeNear);
++    vec3 minPointFar = lineIntersectionWithZPlane(vec3(0, 0, 0), minTile, planeFar);
++    vec3 maxPointNear = lineIntersectionWithZPlane(vec3(0, 0, 0), maxTile, planeNear);
++    vec3 maxPointFar = lineIntersectionWithZPlane(vec3(0, 0, 0), maxTile, planeFar);
++
++    clusters[tileIndex].minPoint = vec4(min(minPointNear, minPointFar), 0.0);
++    clusters[tileIndex].maxPoint = vec4(max(maxPointNear, maxPointFar), 0.0);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/core/lighting/cull.comp b/files/shaders/gles/core/lighting/cull.comp
+index e69de29bb2..761b7f56ad 100755
+--- a/files/shaders/gles/core/lighting/cull.comp
++++ b/files/shaders/gles/core/lighting/cull.comp
+@@ -0,0 +1,83 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++layout(local_size_x = @workGroupSize, local_size_y = 1, local_size_z = 1) in;
++
++#include "lib/light/bindings.glsl"
++
++shared Cluster g_cluster;
++
++shared uint g_Count;
++shared uint g_Offset;
++shared uint g_List[@maxLightsPerCluster];
++
++bool sphereAABBIntersection(vec3 center, float radius, vec3 aabbMin, vec3 aabbMax)
++{
++    vec3 closestPoint = clamp(center, aabbMin, aabbMax);
++    return dot(closestPoint - center, closestPoint - center) <= radius * radius;
++}
++
++bool testSphereAABB(int i, Cluster cluster)
++{
++    vec3 center = pointLight[i].position.xyz;
++    float radius = pointLight[i].radius;
++
++    vec3 aabbMin = cluster.minPoint.xyz;
++    vec3 aabbMax = cluster.maxPoint.xyz;
++
++    return sphereAABBIntersection(center, radius, aabbMin, aabbMax);
++}
++
++void main()
++{
++    if (gl_LocalInvocationIndex == 0u) {
++        g_Count = 0u;
++        g_cluster = clusters[gl_WorkGroupID.x];
++    }
++
++    barrier();
++
++    uint index = 0u;
++
++    for (uint i = gl_LocalInvocationIndex; i < uint(pointLight.length()); i += uint(@workGroupSize)) {
++        PointLight light = pointLight[i];
++
++        vec3 center = light.position.xyz;
++        float radius = light.radius;
++
++        vec3 aabbMin = g_cluster.minPoint.xyz;
++        vec3 aabbMax = g_cluster.maxPoint.xyz;
++
++        if (sphereAABBIntersection(center, radius, aabbMin, aabbMax)) {
++            index = atomicAdd(g_Count, 1u);
++
++            if (index >= uint(@maxLightsPerCluster)) break;
++
++            g_List[index] = i;
++        }
++    }
++
++    barrier();
++
++    if (gl_LocalInvocationIndex == 0u) {
++        g_Offset = atomicAdd(globalLightIndexCount, g_Count);
++        lightGrid[gl_WorkGroupID.x] = LightGrid(g_Offset, g_Count);
++    }
++
++    barrier();
++
++    for (uint i = gl_LocalInvocationIndex; i < g_Count; i += uint(@workGroupSize)) {
++        lightIndexList[g_Offset + i] = g_List[i];
++    }
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/core/ripples_blobber.comp b/files/shaders/gles/core/ripples_blobber.comp
+index e69de29bb2..3358f7cf10 100755
+--- a/files/shaders/gles/core/ripples_blobber.comp
++++ b/files/shaders/gles/core/ripples_blobber.comp
+@@ -0,0 +1,43 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++layout (binding = 0, rgba16f) restrict writeonly uniform image2D imageOut;
++layout (binding = 1, rgba16f) restrict readonly uniform image2D imageIn;
++
++layout (local_size_x=16, local_size_y=16) in;
++
++#define MAX_POSITIONS 100
++uniform vec3 positions[MAX_POSITIONS];
++uniform int positionCount;
++
++uniform float osg_SimulationTime;
++uniform vec2 offset;
++
++#include "lib/water/ripples.glsl"
++
++void main()
++{
++    ivec2 texel = ivec2(gl_GlobalInvocationID.xy + uvec2(offset));
++
++    vec4 color = imageLoad(imageIn, texel);
++    float wavesizeMultiplier = getTemporalWaveSizeMultiplier(osg_SimulationTime);
++    for (int i = 0; i < positionCount; ++i)
++    {
++        float wavesize = wavesizeMultiplier * positions[i].z;
++        float displace = clamp(0.2 * abs(length((positions[i].xy + offset) - vec2(gl_GlobalInvocationID.xy)) / wavesize - 1.0) + 0.8, 0.0, 1.0);
++        color.rg = mix(vec2(-1.0), color.rg, displace);
++    }
++
++    imageStore(imageOut, ivec2(gl_GlobalInvocationID.xy), color);
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/core/ripples_simulate.comp b/files/shaders/gles/core/ripples_simulate.comp
+index e69de29bb2..cc85ed48cd 100755
+--- a/files/shaders/gles/core/ripples_simulate.comp
++++ b/files/shaders/gles/core/ripples_simulate.comp
+@@ -0,0 +1,43 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++layout (binding = 0, rgba16f) restrict writeonly uniform image2D imageOut;
++layout (binding = 1, rgba16f) restrict readonly uniform image2D imageIn;
++
++layout (local_size_x=16, local_size_y=16) in;
++
++#include "lib/water/ripples.glsl"
++
++void main()
++{
++    ivec2 texel = ivec2(gl_GlobalInvocationID.xy);
++
++    vec4 n = vec4(
++        imageLoad(imageIn, texel + ivec2(1, 0)).r,
++        imageLoad(imageIn, texel + ivec2(-1, 0)).r,
++        imageLoad(imageIn, texel + ivec2(0, 1)).r,
++        imageLoad(imageIn, texel + ivec2(0, -1)).r
++    );
++
++    vec4 n2 = vec4(
++        imageLoad(imageIn, texel + ivec2(2, 0)).r,
++        imageLoad(imageIn, texel + ivec2(-2, 0)).r,
++        imageLoad(imageIn, texel + ivec2(0, 2)).r,
++        imageLoad(imageIn, texel + ivec2(0, -2)).r
++    );
++
++    vec4 color = imageLoad(imageIn, texel);
++
++    imageStore(imageOut, texel, applySprings(color, n, n2));
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/clip.glsl b/files/shaders/gles/lib/core/clip.glsl
+index e69de29bb2..7104ddd6b2 100755
+--- a/files/shaders/gles/lib/core/clip.glsl
++++ b/files/shaders/gles/lib/core/clip.glsl
+@@ -0,0 +1,44 @@
++
++
++#if defined(GL_ES) && !@useClipDistanceFallback
++    //#extension GL_EXT_clip_cull_distance: require
++#endif
++
++#if defined(GL_ES) || @useClipDistanceFallback
++    #define CONDITIONAL_CLIP_DISTANCE
++#endif
++
++@foreach clipPlaneIndex @clipPlaneList
++    uniform vec4 clipPlane@clipPlaneIndex;
++#ifdef CONDITIONAL_CLIP_DISTANCE
++    uniform bool clipPlaneEnabled@clipPlaneIndex;
++#endif
++@endforeach
++
++#if @useClipDistanceFallback
++@foreach clipPlaneIndex @clipPlaneList
++    out float clip@clipPlaneIndex;
++@endforeach
++#endif
++
++void applyClipPlanes(vec4 pos)
++{
++    @foreach clipPlaneIndex @clipPlaneList
++
++#ifdef CONDITIONAL_CLIP_DISTANCE
++        if (clipPlaneEnabled@clipPlaneIndex)
++#endif
++        {
++#if @useClipDistanceFallback
++            clip@clipPlaneIndex = dot(clipPlane@clipPlaneIndex, pos);
++#else
++            gl_ClipDistance[@clipPlaneIndex] = dot(clipPlane@clipPlaneIndex, pos);
++#endif
++        }
++
++    @endforeach
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/clip_fragment.glsl b/files/shaders/gles/lib/core/clip_fragment.glsl
+index e69de29bb2..e2ab5e4d1f 100755
+--- a/files/shaders/gles/lib/core/clip_fragment.glsl
++++ b/files/shaders/gles/lib/core/clip_fragment.glsl
+@@ -0,0 +1,18 @@
++#if @useClipDistanceFallback
++
++@foreach clipPlaneIndex @clipPlaneList
++    uniform bool clipPlaneEnabled@clipPlaneIndex;
++    in float clip@clipPlaneIndex;
++@endforeach
++
++void applyClipPlanes() {
++    @foreach clipPlaneIndex @clipPlaneList
++        if (clipPlaneEnabled@clipPlaneIndex && clip@clipPlaneIndex < 0.0)
++            discard;
++    @endforeach
++}
++
++#endif
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/clip_legacy.glsl b/files/shaders/gles/lib/core/clip_legacy.glsl
+index e69de29bb2..19b3fad982 100755
+--- a/files/shaders/gles/lib/core/clip_legacy.glsl
++++ b/files/shaders/gles/lib/core/clip_legacy.glsl
+@@ -0,0 +1,17 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++void applyClipPlanes(vec4 pos)
++{
++    gl_ClipVertex = pos;
++}
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/fragment.glsl b/files/shaders/gles/lib/core/fragment.glsl
+index e69de29bb2..cf8fc2cd7d 100755
+--- a/files/shaders/gles/lib/core/fragment.glsl
++++ b/files/shaders/gles/lib/core/fragment.glsl
+@@ -0,0 +1,57 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++#include "lib/core/fragment.h.glsl"
++
++uniform sampler2D reflectionMap;
++uniform Material material;
++
++vec4 sampleReflectionMap(vec2 uv)
++{
++    return texture2D(reflectionMap, uv);
++}
++
++uniform sampler2D lastShader;
++
++vec4 samplerLastShader(vec2 uv)
++{
++    return texture2D(lastShader, uv);
++}
++
++#if @skyBlending
++uniform sampler2D sky;
++
++vec3 sampleSkyColor(vec2 uv)
++{
++    return texture2D(sky, uv).xyz;
++}
++#endif
++
++uniform sampler2D opaqueDepthTex;
++uniform sampler2D opaqueColorTex;
++
++vec4 sampleOpaqueDepthTex(vec2 uv)
++{
++    return texture2D(opaqueDepthTex, uv);
++}
++
++vec4 sampleOpaqueColorTex(vec2 uv)
++{
++    return texture2D(opaqueColorTex, uv);
++}
++
++Material getMaterial()
++{
++    return material;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/fragment.h.glsl b/files/shaders/gles/lib/core/fragment.h.glsl
+index e69de29bb2..0ac9127f73 100755
+--- a/files/shaders/gles/lib/core/fragment.h.glsl
++++ b/files/shaders/gles/lib/core/fragment.h.glsl
+@@ -0,0 +1,51 @@
++
++
++#include "lib/core/lighting_fragment_impl.glsl"
++#include "lib/material/struct.glsl"
++#include "lib/core/clip_fragment.glsl"
++
++uniform sampler2D reflectionMap;
++uniform Material material;
++
++vec4 sampleReflectionMap(vec2 uv)
++{
++    return texture2D(reflectionMap, uv);
++}
++
++uniform sampler2D lastShader;
++
++vec4 samplerLastShader(vec2 uv)
++{
++    return texture2D(lastShader, uv);
++}
++
++#if @skyBlending
++uniform sampler2D sky;
++
++vec3 sampleSkyColor(vec2 uv)
++{
++    return texture2D(sky, uv).xyz;
++}
++#endif
++
++uniform sampler2D opaqueDepthTex;
++uniform sampler2D opaqueColorTex;
++
++vec4 sampleOpaqueDepthTex(vec2 uv)
++{
++    return texture2D(opaqueDepthTex, uv);
++}
++
++vec4 sampleOpaqueColorTex(vec2 uv)
++{
++    return texture2D(opaqueColorTex, uv);
++}
++
++Material getMaterial()
++{
++    return material;
++}
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/fragment_multiview.glsl b/files/shaders/gles/lib/core/fragment_multiview.glsl
+index e69de29bb2..f7eb15891a 100755
+--- a/files/shaders/gles/lib/core/fragment_multiview.glsl
++++ b/files/shaders/gles/lib/core/fragment_multiview.glsl
+@@ -0,0 +1,45 @@
++#version 330
++
++//#extension GL_OVR_multiview : require
++//#extension GL_OVR_multiview2 : require
++//#extension GL_EXT_texture_array : require
++
++#include "lib/core/fragment.h.glsl"
++
++uniform sampler2DArray reflectionMap;
++
++vec4 sampleReflectionMap(vec2 uv)
++{
++    return texture(reflectionMap, vec3((uv), gl_ViewID_OVR));
++}
++
++uniform sampler2DArray lastShader;
++
++vec4 samplerLastShader(vec2 uv)
++{
++    return texture(lastShader, vec3((uv), gl_ViewID_OVR));
++}
++
++#if @skyBlending
++uniform sampler2DArray sky;
++
++vec3 sampleSkyColor(vec2 uv)
++{
++    return texture(sky, vec3((uv), gl_ViewID_OVR)).xyz;
++}
++#endif
++
++uniform sampler2DArray opaqueDepthTex;
++uniform sampler2DArray opaqueColorTex;
++
++vec4 sampleOpaqueDepthTex(vec2 uv)
++{
++    return texture(opaqueDepthTex, vec3((uv), gl_ViewID_OVR));
++}
++
++vec4 sampleOpaqueColorTex(vec2 uv)
++{
++    return texture(opaqueColorTex, vec3((uv), gl_ViewID_OVR));
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/lighting_fragment.glsl b/files/shaders/gles/lib/core/lighting_fragment.glsl
+index e69de29bb2..948d77291f 100755
+--- a/files/shaders/gles/lib/core/lighting_fragment.glsl
++++ b/files/shaders/gles/lib/core/lighting_fragment.glsl
+@@ -0,0 +1,5 @@
++#version 430 compatibility
++
++#include "lib/core/lighting_fragment_impl.glsl"
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/lighting_fragment_impl.glsl b/files/shaders/gles/lib/core/lighting_fragment_impl.glsl
+index e69de29bb2..a19aabaad9 100755
+--- a/files/shaders/gles/lib/core/lighting_fragment_impl.glsl
++++ b/files/shaders/gles/lib/core/lighting_fragment_impl.glsl
+@@ -0,0 +1,75 @@
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#if @lightingMethodClustered
++    #include "lib/light/bindings.glsl"
++#else
++    #include "lib/light/bindings-legacy.glsl"
++#endif
++
++#include "lib/light/util.glsl"
++
++uniform float near;
++uniform vec2 screenRes;
++uniform vec3 gridSize;
++
++void doLighting(vec2 screenCoord, vec3 viewPos, vec3 viewNormal, float shininess, float shadowing, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight) {
++    vec3 viewDir = normalize(viewPos);
++    shininess = max(shininess, 1e-4);
++
++    diffuseLight = vec3(0.0);
++    ambientLight = vec3(0.0);
++    specularLight = vec3(0.0);
++
++    calcDirectionalLighting(sun, viewDir, viewNormal, shininess, diffuseLight, ambientLight, specularLight);
++
++    diffuseLight *= shadowing;
++    specularLight *= shadowing;
++
++#if @lightingMethodClustered
++    LightGrid grid = lightGrid[getClusterTileIndex(screenRes, gridSize, near, screenCoord, viewPos.z)];
++    for (uint i = 0u; i < grid.count; ++i) {
++        PointLight light = pointLight[lightIndexList[grid.offset + i]];
++#else
++    for (int i = 0; i < PointLightCount; ++i) {
++        PointLight light = PointLight(
++            vec4(lcalcPosition(i), 1.0),
++            vec4(lcalcDiffuse(i), 0.0),
++            vec4(lcalcAmbient(i), 0.0),
++            lcalcSpecular(i),
++            lcalcConstantAttenuation(i),
++            lcalcLinearAttenuation(i),
++            lcalcQuadraticAttenuation(i),
++            lcalcRadius(i)
++        );
++#endif
++
++        calcPointLighting(light, viewDir, viewPos, viewNormal, shininess, diffuseLight, ambientLight, specularLight);
++    }
++}
++
++#if @lightingMethodClustered
++vec3 doSpecularLighting(vec2 screenCoord, vec3 viewPos, vec3 viewNormal) {
++    vec3 specular = vec3(0.0);
++    vec3 viewDir = normalize(viewPos);
++    float shininess = 50.0;
++
++    LightGrid grid = lightGrid[getClusterTileIndex(screenRes, gridSize, near, screenCoord, viewPos.z)];
++    for (uint i = 0u; i < grid.count; ++i) {
++        PointLight light = pointLight[lightIndexList[grid.offset + i]];
++
++        vec3 lightPos = light.position.xyz - viewPos;
++        float lightDistance = length(lightPos);
++        vec3 lightDir = lightPos / lightDistance;
++        float attenuation = calcAttenuation(light, lightDistance) * clusterFade(viewPos, light.radius);
++        specular += light.specular.xyz * specularIntensity(viewNormal, viewDir, shininess, lightDir) * attenuation;
++    }
++
++    return specular;
++}
++#else
++vec3 doSpecularLighting(vec2 screenCoord, vec3 viewPos, vec3 viewNormal) { return vec3(0.0); }
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/lighting_fragment_legacy.glsl b/files/shaders/gles/lib/core/lighting_fragment_legacy.glsl
+index e69de29bb2..de2a011db3 100755
+--- a/files/shaders/gles/lib/core/lighting_fragment_legacy.glsl
++++ b/files/shaders/gles/lib/core/lighting_fragment_legacy.glsl
+@@ -0,0 +1,15 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++#include "lib/core/lighting_fragment_impl.glsl"
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/lighting_vertex.glsl b/files/shaders/gles/lib/core/lighting_vertex.glsl
+index e69de29bb2..c9c58e74c7 100755
+--- a/files/shaders/gles/lib/core/lighting_vertex.glsl
++++ b/files/shaders/gles/lib/core/lighting_vertex.glsl
+@@ -0,0 +1,5 @@
++#version 430 compatibility
++
++#include "lib/core/lighting_vertex_impl.glsl"
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/lighting_vertex_impl.glsl b/files/shaders/gles/lib/core/lighting_vertex_impl.glsl
+index e69de29bb2..11d0398b74 100755
+--- a/files/shaders/gles/lib/core/lighting_vertex_impl.glsl
++++ b/files/shaders/gles/lib/core/lighting_vertex_impl.glsl
+@@ -0,0 +1,58 @@
++#if @useGPUShader4
++    //#extension GL_EXT_gpu_shader4: require
++#endif
++
++#if @lightingMethodClustered
++    #include "lib/light/bindings.glsl"
++#else
++    #include "lib/light/bindings-legacy.glsl"
++#endif
++
++#include "lib/light/util.glsl"
++
++uniform float near;
++uniform vec2 screenRes;
++uniform vec3 gridSize;
++
++void directionalLighting(vec3 viewDir, vec3 viewNormal, float shininess, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight)
++{
++    diffuseLight = vec3(0.0);
++    ambientLight = vec3(0.0);
++    specularLight = vec3(0.0);
++
++    calcDirectionalLighting(sun, viewDir, viewNormal, shininess, diffuseLight, ambientLight, specularLight);
++}
++
++void pointLighting(vec2 screenCoord, vec3 viewDir, vec3 viewPos, vec3 viewNormal, float shininess, out vec3 diffuseLight, out vec3 ambientLight, out vec3 specularLight)
++{
++    diffuseLight = vec3(0.0);
++    ambientLight = vec3(0.0);
++    specularLight = vec3(0.0);
++
++#if @simpleLighting || (@particle && !@particlePointLighting)
++    return;
++#endif
++
++#if @lightingMethodClustered
++    LightGrid grid = lightGrid[getClusterTileIndex(screenRes, gridSize, near, screenCoord, viewPos.z)];
++    for (uint i = 0u; i < grid.count; ++i) {
++        PointLight light = pointLight[lightIndexList[grid.offset + i]];
++#else
++    for (int i = 0; i < PointLightCount; ++i) {
++        PointLight light = PointLight(
++            vec4(lcalcPosition(i), 1.0),
++            vec4(lcalcDiffuse(i), 0.0),
++            vec4(lcalcAmbient(i), 0.0),
++            lcalcSpecular(i),
++            lcalcConstantAttenuation(i),
++            lcalcLinearAttenuation(i),
++            lcalcQuadraticAttenuation(i),
++            lcalcRadius(i)
++        );
++#endif
++
++        calcPointLighting(light, viewDir, viewPos, viewNormal, shininess, diffuseLight, ambientLight, specularLight);
++    }
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/lighting_vertex_legacy.glsl b/files/shaders/gles/lib/core/lighting_vertex_legacy.glsl
+index e69de29bb2..404ffb93d5 100755
+--- a/files/shaders/gles/lib/core/lighting_vertex_legacy.glsl
++++ b/files/shaders/gles/lib/core/lighting_vertex_legacy.glsl
+@@ -0,0 +1,15 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++#include "lib/core/lighting_vertex_impl.glsl"
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/vertex.glsl b/files/shaders/gles/lib/core/vertex.glsl
+index e69de29bb2..48965ec4dd 100755
+--- a/files/shaders/gles/lib/core/vertex.glsl
++++ b/files/shaders/gles/lib/core/vertex.glsl
+@@ -0,0 +1,43 @@
++#version 320 es
++#extension GL_EXT_clip_cull_distance : enable
++precision highp float;
++precision highp int;
++precision highp sampler2D;
++precision highp sampler3D;
++precision highp sampler2DShadow;
++precision highp sampler2DArray;
++precision highp image2D;
++//HEADER_END
++
++
++#include "lib/core/vertex.h.glsl"
++
++uniform vec2 screenRes;
++uniform mat4 projectionMatrix;
++uniform Material material;
++
++vec4 modelToClip(vec4 pos)
++{
++    return projectionMatrix * modelToView(pos);
++}
++
++vec4 modelToView(vec4 pos)
++{
++    return osg_ModelViewMatrix * pos;
++}
++
++vec4 viewToClip(vec4 pos)
++{
++    return projectionMatrix * pos;
++}
++
++vec2 clipToScreen(vec4 pos)
++{
++    return ((pos.xy / pos.w) * 0.5 + 0.5) * screenRes;
++}
++
++Material getMaterial()
++{
++    return material;
++}
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/vertex.h.glsl b/files/shaders/gles/lib/core/vertex.h.glsl
+index e69de29bb2..02d82a9074 100755
+--- a/files/shaders/gles/lib/core/vertex.h.glsl
++++ b/files/shaders/gles/lib/core/vertex.h.glsl
+@@ -0,0 +1,37 @@
++vec4 modelToView(vec4 pos);
++
++#include "lib/core/lighting_vertex_impl.glsl"
++#include "lib/material/struct.glsl"
++#include "lib/core/clip.glsl"
++
++//uniform vec2 screenRes;
++uniform mat4 projectionMatrix;
++uniform Material material;
++
++vec4 modelToClip(vec4 pos)
++{
++    return projectionMatrix * modelToView(pos);
++}
++
++vec4 modelToView(vec4 pos)
++{
++    return osg_ModelViewMatrix * pos;
++}
++
++vec4 viewToClip(vec4 pos)
++{
++    return projectionMatrix * pos;
++}
++
++vec2 clipToScreen(vec4 pos)
++{
++    return ((pos.xy / pos.w) * 0.5 + 0.5) * screenRes;
++}
++
++Material getMaterial()
++{
++    return material;
++}
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/core/vertex_multiview.glsl b/files/shaders/gles/lib/core/vertex_multiview.glsl
+index e69de29bb2..ffeb0ebe5c 100755
+--- a/files/shaders/gles/lib/core/vertex_multiview.glsl
++++ b/files/shaders/gles/lib/core/vertex_multiview.glsl
+@@ -0,0 +1,28 @@
++#version 330 compatibility
++// Note: compatibility profile required to access osg_ModelViewMatrix 
++
++//#extension GL_OVR_multiview : require
++//#extension GL_OVR_multiview2 : require
++
++layout(num_views = @numViews) in;
++
++#include "lib/core/vertex.h.glsl"
++
++uniform mat4 projectionMatrixMultiView[@numViews];
++
++vec4 modelToClip(vec4 pos)
++{
++    return viewToClip(modelToView(pos));
++}
++
++vec4 modelToView(vec4 pos)
++{
++    return osg_ModelViewMatrix * pos;
++}
++
++vec4 viewToClip(vec4 pos)
++{
++    return projectionMatrixMultiView[gl_ViewID_OVR] * pos;
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/light/bindings-legacy.glsl b/files/shaders/gles/lib/light/bindings-legacy.glsl
+index e69de29bb2..0e52670f14 100755
+--- a/files/shaders/gles/lib/light/bindings-legacy.glsl
++++ b/files/shaders/gles/lib/light/bindings-legacy.glsl
+@@ -0,0 +1,56 @@
++#include "lib/light/struct.glsl"
++
++/* Layout:
++--------------------------------------- -----------
++|  pos_x  |  ambi_r  |  diff_r  |  spec_r         |
++|  pos_y  |  ambi_g  |  diff_g  |  spec_g         |
++|  pos_z  |  ambi_b  |  diff_b  |  spec_b         |
++|  att_c  |  att_l   |  att_q   |  radius/spec_a  |
++ --------------------------------------------------
++*/
++uniform mat4 LightBuffer[@maxLights];
++uniform int PointLightCount;
++
++float lcalcConstantAttenuation(int lightIndex)
++{
++    return LightBuffer[lightIndex][0].w;
++}
++
++float lcalcLinearAttenuation(int lightIndex)
++{
++    return LightBuffer[lightIndex][1].w;
++}
++
++float lcalcQuadraticAttenuation(int lightIndex)
++{
++    return LightBuffer[lightIndex][2].w;
++}
++
++float lcalcRadius(int lightIndex)
++{
++    return LightBuffer[lightIndex][3].w;
++}
++
++vec3 lcalcPosition(int lightIndex)
++{
++    return LightBuffer[lightIndex][0].xyz;
++}
++
++vec3 lcalcDiffuse(int lightIndex)
++{
++    return LightBuffer[lightIndex][2].xyz;
++}
++
++vec3 lcalcAmbient(int lightIndex)
++{
++    return LightBuffer[lightIndex][1].xyz;
++}
++
++vec4 lcalcSpecular(int lightIndex)
++{
++    return LightBuffer[lightIndex][3];
++}
++
++uniform DirectionalLight sun;
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/light/bindings.glsl b/files/shaders/gles/lib/light/bindings.glsl
+index e69de29bb2..3a8ea2f63f 100755
+--- a/files/shaders/gles/lib/light/bindings.glsl
++++ b/files/shaders/gles/lib/light/bindings.glsl
+@@ -0,0 +1,35 @@
++#include "lib/light/struct.glsl"
++
++struct LightGrid {
++    uint offset;
++    uint count;
++};
++
++struct Cluster {
++    vec4 minPoint;
++    vec4 maxPoint;
++};
++
++layout(std430, binding = 1) restrict buffer clusterSSBO {
++    Cluster clusters[];
++};
++
++layout(std430, binding = 2) restrict buffer pointLightSSBO {
++    PointLight pointLight[];
++};
++
++layout(std430, binding = 3) restrict buffer lightGridSSBO {
++    LightGrid lightGrid[];
++};
++
++layout(std430, binding = 4) restrict buffer lightIndexListSSBO {
++    uint lightIndexList[];
++};
++
++layout(std430, binding = 5) restrict buffer lightIndexCounterSSBO {
++    uint globalLightIndexCount;
++};
++
++uniform DirectionalLight sun;
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/light/clamp.glsl b/files/shaders/gles/lib/light/clamp.glsl
+index e69de29bb2..f1daa362fa 100755
+--- a/files/shaders/gles/lib/light/clamp.glsl
++++ b/files/shaders/gles/lib/light/clamp.glsl
+@@ -0,0 +1,10 @@
++void clampLighting(inout vec3 lighting)
++{
++#if @clamp
++    lighting = clamp(lighting, vec3(0.0), vec3(1.0));
++#else
++    lighting = max(lighting, 0.0);
++#endif
++}
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/light/struct.glsl b/files/shaders/gles/lib/light/struct.glsl
+index e69de29bb2..dea7fe219c 100755
+--- a/files/shaders/gles/lib/light/struct.glsl
++++ b/files/shaders/gles/lib/light/struct.glsl
+@@ -0,0 +1,24 @@
++#ifndef LIB_LIGHT_STRUCT
++#define LIB_LIGHT_STRUCT
++
++struct DirectionalLight {
++    vec4 position;
++    vec4 diffuse;
++    vec4 ambient;
++    vec4 specular;
++};
++
++struct PointLight {
++    vec4 position;
++    vec4 diffuse;
++    vec4 ambient;
++    vec4 specular;
++    float constant;
++    float linear;
++    float quadratic;
++    float radius;
++};
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/light/util.glsl b/files/shaders/gles/lib/light/util.glsl
+index e69de29bb2..3e81f2efea 100755
+--- a/files/shaders/gles/lib/light/util.glsl
++++ b/files/shaders/gles/lib/light/util.glsl
+@@ -0,0 +1,103 @@
++#ifndef LIB_LIGHT_UTIL
++#define LIB_LIGHT_UTIL
++
++#include "lib/light/struct.glsl"
++
++uniform float clusterFar;
++
++float fade(float x)
++{
++    x = clamp(x, 0.0, 1.0);
++    x = 1.0 - x * x;
++    x = 1.0 - x * x;
++    return x;
++}
++
++float lambert(vec3 viewNormal, vec3 lightDir, vec3 viewDir)
++{
++    float lambert = dot(viewNormal, lightDir);
++#ifndef GROUNDCOVER
++    lambert = max(lambert, 0.0);
++#else
++    float eyeCosine = dot(viewNormal, viewDir);
++    if (lambert < 0.0)
++    {
++        lambert = -lambert;
++        eyeCosine = -eyeCosine;
++    }
++    lambert *= clamp(-8.0 * (1.0 - 0.3) * eyeCosine + 1.0, 0.3, 1.0);
++#endif
++    return lambert;
++}
++
++float specularIntensity(vec3 viewNormal, vec3 viewDir, float shininess, vec3 lightDir)
++{
++    if (dot(viewNormal, lightDir) > 0.0)
++    {
++        vec3 halfVec = normalize(lightDir - viewDir);
++        float NdotH = max(dot(viewNormal, halfVec), 0.0);
++        return pow(NdotH, shininess);
++    }
++
++    return 0.0;
++}
++
++float calcAttenuation(PointLight light, float dist) {
++    float attenuation = 1.0 / (light.constant + light.linear * dist + light.quadratic * dist * dist);
++    #if !@classicFalloff || @lightingMethodClustered
++        // Fade illumination out to 0 when reaching the lights radius
++        attenuation *= 1.0 - fade((dist / light.radius - 0.75) / 0.25);
++    #endif
++    return attenuation;
++}
++
++int getClusterTileIndex(vec2 screenRes, vec3 gridSize, float near, vec2 screenCoord, float viewSpaceZ) {
++    int zTile = int((log(abs(viewSpaceZ) / near) * gridSize.z) / log(clusterFar / near));
++    vec2 tileSize = screenRes / vec2(gridSize.xy);
++    ivec3 tile = ivec3(screenCoord / tileSize, zTile);
++    int tileIndex = tile.x + (tile.y * int(gridSize.x)) + (tile.z * int(gridSize.x) * int(gridSize.y));
++
++    return tileIndex;
++}
++
++void calcDirectionalLighting(DirectionalLight light, vec3 viewDir, vec3 viewNormal, float shininess, inout vec3 diffuseLight, inout vec3 ambientLight, inout vec3 specularLight) {
++    vec3 dir = normalize(light.position.xyz);
++    ambientLight += light.ambient.xyz;
++    diffuseLight += light.diffuse.xyz * lambert(viewNormal, dir, viewDir);
++    specularLight += light.specular.xyz * specularIntensity(viewNormal, viewDir, shininess, dir);
++}
++
++// Ensure lights with bounds crossing the far cluster plane fade out.
++// Without this there will be a hard cutoff where objects outside the cluster far plane are not lit.
++float clusterFade(vec3 viewPos, float radius) {
++#if @lightingMethodClustered
++    return 1.0 - fade(clamp((-viewPos.z - (clusterFar - radius)) / radius, 0.0, 1.0));
++#else
++    return 1.0;
++#endif
++}
++
++void calcPointLighting(PointLight light, vec3 viewDir, vec3 viewPos, vec3 viewNormal, float shininess, inout vec3 diffuseLight, inout vec3 ambientLight, inout vec3 specularLight) {
++    vec3 lightPos = light.position.xyz - viewPos;
++    float lightDistance = length(lightPos);
++
++    // cull point lighting by radius, light is guaranteed to not fall outside this bound with our cutoff
++#if !@classicFalloff
++    if (lightDistance > light.radius)
++        return;
++#endif
++
++    vec3 lightDir = lightPos / lightDistance;
++
++    float attenuation = calcAttenuation(light, lightDistance) * clusterFade(viewPos, light.radius);
++
++    diffuseLight += light.diffuse.xyz * lambert(viewNormal, lightDir, viewDir) * attenuation;
++    ambientLight += light.ambient.xyz * attenuation;
++    specularLight += light.specular.xyz * specularIntensity(viewNormal, viewDir, shininess, lightDir) * attenuation;
++}
++
++#endif
++
++#pragma CONVERTED
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/luminance/constants.glsl b/files/shaders/gles/lib/luminance/constants.glsl
+index e69de29bb2..6b5a8464a3 100755
+--- a/files/shaders/gles/lib/luminance/constants.glsl
++++ b/files/shaders/gles/lib/luminance/constants.glsl
+@@ -0,0 +1,13 @@
++#ifndef LUMINANCE_CONSTANTS
++#define LUMINANCE_CONSTANTS
++
++const float minLog = -9.0;
++const float maxLog = 4.0;
++const float logLumRange = (maxLog - minLog);
++const float invLogLumRange = 1.0 / logLumRange;
++const float epsilon = 0.004;
++const float hdrExposureTime = @hdrExposureTime;
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/material/alpha.glsl b/files/shaders/gles/lib/material/alpha.glsl
+index e69de29bb2..c461fdffc3 100755
+--- a/files/shaders/gles/lib/material/alpha.glsl
++++ b/files/shaders/gles/lib/material/alpha.glsl
+@@ -0,0 +1,89 @@
++#ifndef LIB_MATERIAL_ALPHA
++#define LIB_MATERIAL_ALPHA
++
++#define FUNC_NEVER                          512 // 0x0200
++#define FUNC_LESS                           513 // 0x0201
++#define FUNC_EQUAL                          514 // 0x0202
++#define FUNC_LEQUAL                         515 // 0x0203
++#define FUNC_GREATER                        516 // 0x0204
++#define FUNC_NOTEQUAL                       517 // 0x0205
++#define FUNC_GEQUAL                         518 // 0x0206
++#define FUNC_ALWAYS                         519 // 0x0207
++
++float mipmapLevel(vec2 scaleduv)
++{
++    vec2 dUVdx = dFdx(scaleduv);
++    vec2 dUVdy = dFdy(scaleduv);
++    float maxDUVSquared = max(dot(dUVdx, dUVdx), dot(dUVdy, dUVdy));
++    return max(0.0, 0.5 * log2(maxDUVSquared));
++}
++
++float coveragePreservingAlphaScale(sampler2D diffuseMap, vec2 uv)
++{
++    #if @adjustCoverage
++        vec2 textureSize;
++        #if @useGPUShader4
++            textureSize = vec2(256.0);
++        #else
++            textureSize = vec2(256.0);
++        #endif
++            return 1.0 + mipmapLevel(uv * textureSize) * 0.25;
++    #else
++        return 1.0;
++    #endif
++}
++
++float alphaTest(float alpha, float ref)
++{
++    #if @alphaToCoverage 
++        float coverageAlpha = (alpha - clamp(ref, 0.0001, 0.9999)) / max(fwidth(alpha), 0.0001) + 0.5;
++
++        // Some functions don't make sense with A2C or are a pain to think about and no meshes use them anyway
++        // Use regular alpha testing in such cases until someone complains.
++        #if @alphaFunc == FUNC_NEVER
++            discard;
++        #elif @alphaFunc == FUNC_LESS
++            return 1.0 - coverageAlpha;
++        #elif @alphaFunc == FUNC_EQUAL
++            if (alpha != ref)
++                discard;
++        #elif @alphaFunc == FUNC_LEQUAL
++            return 1.0 - coverageAlpha;
++        #elif @alphaFunc == FUNC_GREATER
++            return coverageAlpha;
++        #elif @alphaFunc == FUNC_NOTEQUAL
++            if (alpha == ref)
++                discard;
++        #elif @alphaFunc == FUNC_GEQUAL
++            return coverageAlpha;
++        #endif
++    #else
++        #if @alphaFunc == FUNC_NEVER
++            discard;
++        #elif @alphaFunc == FUNC_LESS
++            if (alpha >= ref)
++                discard;
++        #elif @alphaFunc == FUNC_EQUAL
++            if (alpha != ref)
++                discard;
++        #elif @alphaFunc == FUNC_LEQUAL
++            if (alpha > ref)
++                discard;
++        #elif @alphaFunc == FUNC_GREATER
++            if (alpha <= ref)
++                discard;
++        #elif @alphaFunc == FUNC_NOTEQUAL
++            if (alpha == ref)
++                discard;
++        #elif @alphaFunc == FUNC_GEQUAL
++            if (alpha < ref)
++                discard;
++        #endif
++    #endif
++
++    return alpha;
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/material/colormodes.glsl b/files/shaders/gles/lib/material/colormodes.glsl
+index e69de29bb2..cf0750be33 100755
+--- a/files/shaders/gles/lib/material/colormodes.glsl
++++ b/files/shaders/gles/lib/material/colormodes.glsl
+@@ -0,0 +1,13 @@
++#ifndef LIB_MATERIAL_COLORMODES
++#define LIB_MATERIAL_COLORMODES
++
++const int ColorMode_None = 0;
++const int ColorMode_Emission = 1;
++const int ColorMode_AmbientAndDiffuse = 2;
++const int ColorMode_Ambient = 3;
++const int ColorMode_Diffuse = 4;
++const int ColorMode_Specular = 5;
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/material/parallax.glsl b/files/shaders/gles/lib/material/parallax.glsl
+index e69de29bb2..bfc8dc0418 100755
+--- a/files/shaders/gles/lib/material/parallax.glsl
++++ b/files/shaders/gles/lib/material/parallax.glsl
+@@ -0,0 +1,14 @@
++#ifndef LIB_MATERIAL_PARALLAX
++#define LIB_MATERIAL_PARALLAX
++
++#define PARALLAX_SCALE 0.04
++#define PARALLAX_BIAS -0.02
++
++vec2 getParallaxOffset(vec3 eyeDir, float height)
++{
++    return vec2(eyeDir.x, eyeDir.y) * ( height * PARALLAX_SCALE + PARALLAX_BIAS );
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/material/struct.glsl b/files/shaders/gles/lib/material/struct.glsl
+index e69de29bb2..3b9b5b4378 100755
+--- a/files/shaders/gles/lib/material/struct.glsl
++++ b/files/shaders/gles/lib/material/struct.glsl
+@@ -0,0 +1,18 @@
++#ifndef LIB_MATERIAL_STRUCT
++#define LIB_MATERIAL_STRUCT
++
++struct Material
++{
++    vec4 diffuse;
++    vec4 ambient;
++    vec4 specular;
++    vec4 emission;
++    float shininess;
++    float emissiveMult;
++    float specStrength;
++    int vertexColorMode;
++};
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/material/vertexcolors.glsl b/files/shaders/gles/lib/material/vertexcolors.glsl
+index e69de29bb2..c1939e708d 100755
+--- a/files/shaders/gles/lib/material/vertexcolors.glsl
++++ b/files/shaders/gles/lib/material/vertexcolors.glsl
+@@ -0,0 +1,41 @@
++#ifndef LIB_MATERIAL_PROPERTIES_H
++#define LIB_MATERIAL_PROPERTIES_H
++
++#include "lib/material/colormodes.glsl"
++
++vec4 getEmissionColor(Material material, vec4 passColor)
++{
++    if (material.vertexColorMode == ColorMode_Emission)
++        return passColor;
++    return material.emission;
++}
++
++vec4 getAmbientColor(Material material, vec4 passColor)
++{
++    if (material.vertexColorMode == ColorMode_AmbientAndDiffuse || material.vertexColorMode == ColorMode_Ambient)
++        return passColor;
++    return material.ambient;
++}
++
++vec4 getDiffuseColor(Material material, vec4 passColor)
++{
++    if (material.vertexColorMode == ColorMode_AmbientAndDiffuse || material.vertexColorMode == ColorMode_Diffuse)
++        return passColor;
++    return material.diffuse;
++}
++
++vec4 getSpecularColor(Material material, vec4 passColor)
++{
++    if (material.vertexColorMode == ColorMode_Specular)
++        return passColor;
++    return material.specular;
++}
++
++bool skipLighting(Material material, vec4 passColor)
++{
++    return getAmbientColor(material, passColor).xyz == vec3(0.0) && getDiffuseColor(material, passColor).xyz == vec3(0.0) && getSpecularColor(material, passColor).xyz == vec3(0.0);
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/particle/occlusion.glsl b/files/shaders/gles/lib/particle/occlusion.glsl
+index e69de29bb2..712fb398aa 100755
+--- a/files/shaders/gles/lib/particle/occlusion.glsl
++++ b/files/shaders/gles/lib/particle/occlusion.glsl
+@@ -0,0 +1,17 @@
++#ifndef LIB_PARTICLE_OCCLUSION
++#define LIB_PARTICLE_OCCLUSION
++
++void applyOcclusionDiscard(in vec3 coord, float sceneDepth)
++{
++#if @reverseZ
++    if (coord.z < sceneDepth)
++        discard;
++#else
++    if (coord.z * 0.5 + 0.5 > sceneDepth)
++        discard;
++#endif
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/particle/soft.glsl b/files/shaders/gles/lib/particle/soft.glsl
+index e69de29bb2..f2acb55eb0 100755
+--- a/files/shaders/gles/lib/particle/soft.glsl
++++ b/files/shaders/gles/lib/particle/soft.glsl
+@@ -0,0 +1,69 @@
++#ifndef LIB_PARTICLE_SOFT
++#define LIB_PARTICLE_SOFT
++
++#include "lib/util/quickstep.glsl"
++
++float viewDepth(float depth, float near, float far)
++{
++#if @reverseZ
++    depth = 1.0 - depth;
++#endif
++    return (near * far) / ((far - near) * depth - far);
++}
++
++float calcSoftParticleFade(
++    in vec3 viewDir,
++    in vec3 viewPos,
++    in vec3 viewNormal,
++    float near,
++    float far,
++    float depth,
++    float size,
++    bool fade,
++    float softFalloffDepth,
++    bool waterEnabled,
++    bool isReflection,
++    float waterHeight,
++    mat4 viewMatrixInverse
++    )
++{
++    float euclidianDepth = length(viewPos);
++
++    const float falloffMultiplier = 0.33;
++    const float contrast = 1.30;
++
++    float sceneDepth = viewDepth(depth, near, far);
++    float particleDepth = viewPos.z;
++    float falloff = size * falloffMultiplier;
++    float delta = particleDepth - sceneDepth;
++
++    float viewBias = 1.0;
++
++    if (fade)
++    {
++        float VdotN = dot(viewDir, viewNormal);
++        viewBias = abs(VdotN) * quickstep(euclidianDepth / softFalloffDepth) * (1.0 - pow(1.0 - abs(VdotN), 1.3));
++    }
++
++    const float shift = 0.845;
++    float particleFade = shift * pow(clamp(delta/falloff, 0.0, 1.0), contrast) * viewBias;
++
++    // Treat the water plane as a virtual occluder
++    // The water plane will nver write to the depth buffer and may or may not have been rendered yet
++    if (waterEnabled && !isReflection)
++    {
++        vec3 cameraPos = viewMatrixInverse[3].xyz;
++        vec3 worldPos = (viewMatrixInverse * vec4(viewPos, 1.0)).xyz;
++        float cameraSide = cameraPos.z >= waterHeight ? 1.0 : -1.0;
++        float waterDistance = cameraSide * (worldPos.z - waterHeight);
++        float waterFadeDistance = max(size, 0.001);
++
++        particleFade *= smoothstep(0.0, waterFadeDistance, waterDistance);
++    }
++
++    return particleFade;
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/sky/passes.glsl b/files/shaders/gles/lib/sky/passes.glsl
+index e69de29bb2..eaea75bbbd 100755
+--- a/files/shaders/gles/lib/sky/passes.glsl
++++ b/files/shaders/gles/lib/sky/passes.glsl
+@@ -0,0 +1,14 @@
++#ifndef LIB_SKY_PASSES
++#define LIB_SKY_PASSES
++
++#define PASS_ATMOSPHERE 0
++#define PASS_ATMOSPHERE_NIGHT 1
++#define PASS_CLOUDS 2
++#define PASS_MOON 3
++#define PASS_SUN 4
++#define PASS_SUNFLASH_QUERY 5
++#define PASS_SUNGLARE 6
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/util/coordinates.glsl b/files/shaders/gles/lib/util/coordinates.glsl
+index e69de29bb2..716d7d57a2 100755
+--- a/files/shaders/gles/lib/util/coordinates.glsl
++++ b/files/shaders/gles/lib/util/coordinates.glsl
+@@ -0,0 +1,39 @@
++#ifndef LIB_UTIL_COORDINATES
++#define LIB_UTIL_COORDINATES
++
++#define PI 3.1415926535
++
++vec3 sphericalCoords(vec2 coords)
++{
++    coords.x = -1 * coords.x * 2 * PI;
++    coords.y = (coords.y - 0.5) * PI;
++ 
++    vec3 result = vec3(0.0,cos(coords.y),sin(coords.y));
++    result = vec3(cos(coords.x) * result.y,sin(coords.x) * result.y,result.z);
++ 
++    return result;
++}
++
++vec3 cylindricalCoords(vec2 coords)
++{
++    return normalize(vec3(cos(-1 * coords.x * 2 * PI),sin(-1 * coords.x * 2 * PI),coords.y * 2.0 - 1.0));
++}
++
++vec3 planetCoords(vec2 coords)
++{
++    vec2 fromCenter = coords - vec2(0.5,0.5);
++
++    float magnitude = length(fromCenter);
++
++    fromCenter = normalize(fromCenter);
++
++    float dotProduct = dot(fromCenter,vec2(0.0,1.0));
++
++    coords.x = coords.x > 0.5 ? 0.5 - (dotProduct + 1.0) / 4.0 : 0.5 + (dotProduct + 1.0) / 4.0;
++    coords.y = max(0.0,1.0 - pow(magnitude / 0.5,0.5));
++    return sphericalCoords(coords);
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/util/distortion.glsl b/files/shaders/gles/lib/util/distortion.glsl
+index e69de29bb2..251b740158 100755
+--- a/files/shaders/gles/lib/util/distortion.glsl
++++ b/files/shaders/gles/lib/util/distortion.glsl
+@@ -0,0 +1,34 @@
++#ifndef LIB_UTIL_DISTORTION
++#define LIB_UTIL_DISTORTION
++
++vec4 applyDistortion(in vec4 color, in float strength, in float pixelDepth, in float sceneDepth)
++{
++    vec4 distortion = color;
++    float invOcclusion = 1.0;
++
++    // TODO: Investigate me. Alpha-clipping is enabled for refraction for what seems an arbitrary threshold, even when
++    // there are no associated NIF properties.
++    if (distortion.a < 0.1)
++        discard;
++
++    distortion.b = 0.0;
++
++#if @reverseZ
++    if (pixelDepth < sceneDepth)
++#else
++    if (pixelDepth > sceneDepth)
++#endif
++    {
++        invOcclusion = 0.0;
++        distortion.b = 1.0;
++    }
++    distortion.rg = color.rg * 2.0 - 1.0;
++
++    distortion.rg *= invOcclusion * strength * color.a;
++
++    return distortion;
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/util/quickstep.glsl b/files/shaders/gles/lib/util/quickstep.glsl
+index e69de29bb2..7aebdd0f8e 100755
+--- a/files/shaders/gles/lib/util/quickstep.glsl
++++ b/files/shaders/gles/lib/util/quickstep.glsl
+@@ -0,0 +1,14 @@
++#ifndef LIB_UTIL_QUICKSTEP
++#define LIB_UTIL_QUICKSTEP
++
++float quickstep(float x)
++{
++    x = clamp(x, 0.0, 1.0);
++    x = 1.0 - x * x;
++    x = 1.0 - x * x;
++    return x;
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/view/depth.glsl b/files/shaders/gles/lib/view/depth.glsl
+index e69de29bb2..295292d2cf 100755
+--- a/files/shaders/gles/lib/view/depth.glsl
++++ b/files/shaders/gles/lib/view/depth.glsl
+@@ -0,0 +1,26 @@
++#ifndef LIB_VIEW_DEPTH
++#define LIB_VIEW_DEPTH
++
++float linearizeDepth(float depth, float near, float far)
++{
++#if @reverseZ
++    depth = 1.0 - depth;
++#endif
++    float z_n = 2.0 * depth - 1.0;
++    depth = 2.0 * near * far / (far + near - z_n * (far - near));
++    return depth;
++}
++
++float getLinearDepth(in float z, in float viewZ)
++{
++#if @reverseZ
++    // FIXME: Fixme, figure out how to calculate correct linear depth for reverse z
++    return -viewZ;
++#else
++    return z;
++#endif
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/water/fresnel.glsl b/files/shaders/gles/lib/water/fresnel.glsl
+index e69de29bb2..6001fe33f7 100755
+--- a/files/shaders/gles/lib/water/fresnel.glsl
++++ b/files/shaders/gles/lib/water/fresnel.glsl
+@@ -0,0 +1,27 @@
++#ifndef LIB_WATER_FRESNEL
++#define LIB_WATER_FRESNEL
++
++float fresnel_dielectric(vec3 incoming, vec3 normal, float eta)
++{
++    float c = abs(dot(incoming, normal));
++    float g = eta * eta - 1.0 + c * c;
++    float result;
++
++    if (g > 0.0)
++    {
++        g = sqrt(g);
++        float A =(g - c)/(g + c);
++        float B =(c *(g + c)- 1.0)/(c *(g - c)+ 1.0);
++        result = 0.5 * A * A *(1.0 + B * B);
++    }
++    else
++    {
++        result = 1.0;  /* TIR (no refracted component) */
++    }
++
++    return result;
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/water/rain_ripples.glsl b/files/shaders/gles/lib/water/rain_ripples.glsl
+index e69de29bb2..9c84beb344 100755
+--- a/files/shaders/gles/lib/water/rain_ripples.glsl
++++ b/files/shaders/gles/lib/water/rain_ripples.glsl
+@@ -0,0 +1,126 @@
++#ifndef LIB_WATER_RIPPLES
++#define LIB_WATER_RIPPLES
++
++const float RAIN_RIPPLE_GAPS = 10.0;
++const float RAIN_RIPPLE_RADIUS = 0.2;
++
++float scramble(float x, float z)
++{
++    return fract(pow(fract(x)*3.0+1.0, z));
++}
++
++vec2 randOffset(vec2 c, float time)
++{
++  time = fract(time/1000.0);
++  c = vec2(c.x * c.y /  8.0 + c.y * 0.3 + c.x * 0.2,
++           c.x * c.y / 14.0 + c.y * 0.5 + c.x * 0.7);
++  c.x *= scramble(scramble(time + c.x/1000.0, 4.0), 3.0) + 1.0;
++  c.y *= scramble(scramble(time + c.y/1000.0, 3.5), 3.0) + 1.0;
++  return fract(c);
++}
++
++float randPhase(vec2 c)
++{
++  return fract((c.x * c.y) /  (c.x + c.y + 0.1));
++}
++
++float blip(float x)
++{
++  x = max(0.0, 1.0-x*x);
++  return x*x*x;
++}
++
++float blipDerivative(float x)
++{
++  x = clamp(x, -1.0, 1.0);
++  float n = x*x-1.0;
++  return -6.0*x*n*n;
++}
++
++const float RAIN_RING_TIME_OFFSET = 1.0/6.0;
++
++vec4 circle(vec2 coords, vec2 corner, float adjusted_time)
++{
++  vec2 center = vec2(0.5,0.5) + (0.5 - RAIN_RIPPLE_RADIUS) * (2.0 * randOffset(corner, floor(adjusted_time)) - 1.0);
++  float phase = fract(adjusted_time);
++  vec2 toCenter = coords - center;
++
++  float r = RAIN_RIPPLE_RADIUS;
++  float d = length(toCenter);
++  float ringfollower = (phase-d/r)/RAIN_RING_TIME_OFFSET-1.0; // -1.0 ~ +1.0 cover the breadth of the ripple's ring
++
++#if @rainRippleDetail > 0
++// normal mapped ripples
++  if(ringfollower < -1.0 || ringfollower > 1.0)
++    return vec4(0.0);
++
++  if(d > 1.0) // normalize center direction vector, but not for near-center ripples
++    toCenter /= d;
++
++  float height = blip(ringfollower*2.0+0.5); // brighten up outer edge of ring; for fake specularity
++  float range_limit = blip(min(0.0, ringfollower));
++  float energy = 1.0-phase;
++
++  vec2 normal2d = -toCenter*blipDerivative(ringfollower)*5.0;
++  vec3 normal = vec3(normal2d, 0.5);
++  vec4 ret = vec4(normal, height);
++  ret.xyw *= energy*energy;
++  // do energy adjustment here rather than later, so that we can use the w component for fake specularity
++  ret.xyz = normalize(ret.xyz) * energy*range_limit;
++  ret.z *= range_limit;
++  return ret;
++#else
++// ring-only ripples
++  if(ringfollower < -1.0 || ringfollower > 0.5)
++    return vec4(0.0);
++
++  float energy = 1.0-phase;
++  float height = blip(ringfollower*2.0+0.5)*energy*energy; // fake specularity
++
++  return vec4(0.0, 0.0, 0.0, height);
++#endif
++}
++vec4 rain(vec2 uv, float time)
++{
++  uv *= RAIN_RIPPLE_GAPS;
++  vec2 f_part = fract(uv);
++  vec2 i_part = floor(uv);
++  float adjusted_time = time * 1.2 + randPhase(i_part);
++#if @rainRippleDetail > 0
++  vec4 a = circle(f_part, i_part, adjusted_time);
++  vec4 b = circle(f_part, i_part, adjusted_time - RAIN_RING_TIME_OFFSET);
++  vec4 c = circle(f_part, i_part, adjusted_time - RAIN_RING_TIME_OFFSET*2.0);
++  vec4 d = circle(f_part, i_part, adjusted_time - RAIN_RING_TIME_OFFSET*3.0);
++  vec4 ret;
++  ret.xy = a.xy - b.xy/2.0 + c.xy/4.0 - d.xy/8.0;
++  // z should always point up
++  ret.z  = a.z  + b.z /2.0 + c.z /4.0 + d.z /8.0;
++  //ret.xyz *= 1.5;
++  // fake specularity looks weird if we use every single ring, also if the inner rings are too bright 
++  ret.w  = (a.w + c.w /8.0)*1.5;
++  return ret;
++#else
++  return circle(f_part, i_part, adjusted_time) * 1.5;
++#endif
++}
++
++vec2 complex_mult(vec2 a, vec2 b)
++{
++    return vec2(a.x*b.x - a.y*b.y, a.x*b.y + a.y*b.x);
++}
++vec4 rainCombined(vec2 uv, float time) // returns ripple normal in xyz and fake specularity in w
++{
++  return
++    rain(uv, time)
++  + rain(complex_mult(uv, vec2(0.4, 0.7)) + vec2(1.2, 3.0),time)
++#if @rainRippleDetail == 2
++      + rain(uv * 0.75 + vec2( 3.7,18.9),time)
++      + rain(uv * 0.9  + vec2( 5.7,30.1),time)
++      + rain(uv * 1.0  + vec2(10.5 ,5.7),time)
++#endif
++  ;
++}
++
++#endif
++
++#pragma GLES
+diff --git a/files/shaders/gles/lib/water/ripples.glsl b/files/shaders/gles/lib/water/ripples.glsl
+index e69de29bb2..ddd65f1b3a 100755
+--- a/files/shaders/gles/lib/water/ripples.glsl
++++ b/files/shaders/gles/lib/water/ripples.glsl
+@@ -0,0 +1,31 @@
++#ifndef LIB_WATER_RIPPLES
++#define LIB_WATER_RIPPLES
++
++float getTemporalWaveSizeMultiplier(in float time)
++{
++    return 1.0 + 0.055 * sin(16.0 * time) + 0.065 * sin(12.87645 * time);
++}
++
++vec4 applySprings(in vec4 samplerData, in vec4 n, in vec4 n2)
++{
++    vec4 storage = vec4(0.0, samplerData.r, 0.0, 0.0);
++
++    // Tweak to look most like water, not a physically accurate simulation
++    const float a = 0.28;
++    const float udamp = 0.04;
++    const float vdamp = 0.04;
++
++    // Apply 2d wave equation with dampening
++    // Continous impulse needed to maintain simulation, otherwise ripples will fade
++    float nsum = n.x + n.y + n.z + n.w;
++    storage.r = a * nsum + ((2.0 - udamp - vdamp) - 4.0 * a) * samplerData.r - (1.0 - vdamp) * samplerData.g;
++
++    // Calculate normal and store in blue-alpha channel
++    storage.ba = 2.0 * (n.xz - n.yw) + 0.5 * (n2.xz - n2.yw);
++
++    return storage;
++}
++
++#endif
++
++#pragma GLES

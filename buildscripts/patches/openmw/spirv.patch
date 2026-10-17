@@ -1,32 +1,8 @@
-From fc53fedc0252116948752ece487553d0e299887d Mon Sep 17 00:00:00 2001
-From: sisah <jirielbunda@seznam.cz>
-Date: Sun, 2 Aug 2026 15:43:33 -0400
-Subject: [PATCH] spirv shaderconv
-
----
- CMakeLists.txt                         |   8 +-
- apps/openmw/CMakeLists.txt             |   8 +-
- apps/openmw/mwrender/postprocessor.cpp |   4 +-
- cmake/FindSPIRV-Cross.cmake            |  31 +++
- cmake/glslang-config.cmake             |  36 ++++
- cmake/spirv-cross-config.cmake         |  31 +++
- components/CMakeLists.txt              |   4 +-
- components/fx/pass.cpp                 |  21 +-
- components/fx/technique.cpp            |   9 +-
- components/shader/shaderconverter.cpp  | 264 +++++++++++++++++++++++++
- components/shader/shaderconverter.hpp  |  21 ++
- 11 files changed, 427 insertions(+), 10 deletions(-)
- create mode 100755 cmake/FindSPIRV-Cross.cmake
- create mode 100755 cmake/glslang-config.cmake
- create mode 100755 cmake/spirv-cross-config.cmake
- create mode 100755 components/shader/shaderconverter.cpp
- create mode 100755 components/shader/shaderconverter.hpp
-
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index d643015fa52..b22aedda149 100644
+index 952add01d3..52d678ca04 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -273,6 +273,11 @@ endif()
+@@ -335,6 +335,11 @@ endif()
  
  find_package(LZ4 REQUIRED)
  
@@ -39,17 +15,16 @@ index d643015fa52..b22aedda149 100644
      find_package(QT REQUIRED COMPONENTS Core NAMES Qt6)
      find_package(Qt6 COMPONENTS Core Widgets Network OpenGL OpenGLWidgets LinguistTools Svg REQUIRED)
 diff --git a/apps/openmw/CMakeLists.txt b/apps/openmw/CMakeLists.txt
-index c7e224d353c..95b74f478f9 100644
+index 3f8310d229..52c1fd5d86 100644
 --- a/apps/openmw/CMakeLists.txt
 +++ b/apps/openmw/CMakeLists.txt
-@@ -218,7 +222,9 @@ if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
+@@ -231,7 +231,8 @@ if (MSVC AND PRECOMPILE_HEADERS_WITH_MSVC)
  endif()
  
  if (ANDROID)
--    target_link_libraries(openmw-lib EGL android log z)
-+    target_link_libraries(
-+            openmw-lib EGL android log z glslang::glslang glslang::SPIRV spirv-cross-c
-+    )
+-    target_link_libraries(openmw-lib EGL android log z ${ADRENOTOOLS_LIBRARIES}/libadrenotools.a ${ADRENOTOOLS_LIBRARIES}/liblinkernsbypass.a)
++    target_link_libraries(openmw-lib EGL android log z ${ADRENOTOOLS_LIBRARIES}/libadrenotools.a ${ADRENOTOOLS_LIBRARIES}/liblinkernsbypass.a glslang::glslang glslang::SPIRV spirv-cross-c)
++
  endif (ANDROID)
  
  if (USE_SYSTEM_TINYXML)
@@ -191,41 +166,31 @@ index 00000000000..40375402994
 +# Provide the case-sensitive alias if needed
 +add_library(SPIRV-Cross::spirv-cross-c ALIAS spirv-cross-c)
 diff --git a/components/CMakeLists.txt b/components/CMakeLists.txt
-index 7e153728aa7..39cc6277033 100644
+index 39301d52e8..7df61d0eed 100644
 --- a/components/CMakeLists.txt
 +++ b/components/CMakeLists.txt
-@@ -133,7 +133,7 @@ add_component_dir (resource
+@@ -144,7 +144,7 @@ add_component_dir (resource
      )
  
  add_component_dir (shader
--    shadermanager shadervisitor removedalphafunc
-+    shadermanager shadervisitor removedalphafunc shaderconverter
+-    shadermanager shadervisitor removedalphafunc materialmode materialmap
++    shadermanager shadervisitor removedalphafunc materialmode materialmap shaderconverter
      )
  
- add_component_dir (sceneutil
+ if (OPENMW_USE_VULKAN)
 diff --git a/components/fx/pass.cpp b/components/fx/pass.cpp
-index eceffa188f7..5c7e36c28b6 100644
+index 29303276c8..d50fc5a94a 100644
 --- a/components/fx/pass.cpp
 +++ b/components/fx/pass.cpp
-@@ -16,6 +16,7 @@
+@@ -23,6 +23,7 @@
  #include <components/settings/values.hpp>
  #include <components/stereo/multiview.hpp>
  #include <components/version/version.hpp>
 +#include <components/shader/shaderconverter.hpp>
  
+ #include "dialect.hpp"
  #include "stateupdater.hpp"
- #include "technique.hpp"
-@@ -65,6 +66,9 @@ namespace Fx
-         std::string header = R"GLSL(
- #version @version @profile
- @extensions
-+precision highp float;
-+precision highp int;
-+precision lowp sampler2D;
- 
- @uboStruct
- 
-@@ -85,6 +89,7 @@ namespace Fx
+@@ -78,6 +79,7 @@ void main()
  #define omw_Texture3D @texture3D
  #define omw_Vertex @vertex
  #define omw_FragColor @fragColor
@@ -233,12 +198,13 @@ index eceffa188f7..5c7e36c28b6 100644
  
  @fragBinding
  
-@@ -365,8 +370,20 @@ float omw_EstimateFogCoverageFromUV(vec2 uv)
-                 mVertex = new osg::Shader(
-                     osg::Shader::VERTEX, Stereo::getMultiview() ? s_DefaultVertexMultiview : s_DefaultVertex);
- 
+@@ -505,8 +507,21 @@ namespace Fx
+             mPreamble = preamble;
+             mVertexSource = mVertex->getShaderSource();
+             mFragmentSource = mFragment->getShaderSource();
 -            mVertex->setShaderSource(getPassHeader(technique, preamble).append(mVertex->getShaderSource()));
 -            mFragment->setShaderSource(getPassHeader(technique, preamble, true).append(mFragment->getShaderSource()));
++
 +            std::string vertexSource = getPassHeader(technique, preamble).append(mVertex->getShaderSource());
 +            std::string fragmentSource = getPassHeader(technique, preamble, true).append(mFragment->getShaderSource());
 +
@@ -584,18 +550,19 @@ index 00000000000..04b6752221f
 +}
 +
 +#endif
+
 diff --git a/components/shader/shadermanager.cpp b/components/shader/shadermanager.cpp
 index 130c2dccd3..dbd79145dd 100644
 --- a/components/shader/shadermanager.cpp
 +++ b/components/shader/shadermanager.cpp
-@@ -22,6 +22,7 @@
- #include <components/misc/strings/conversion.hpp>
- #include <components/sceneutil/clipplane.hpp>
- #include <components/settings/settings.hpp>
-+#include <components/shader/shaderconverter.hpp>
+@@ -23,6 +23,7 @@
+ #include <osg/buffered_value>
+ #include <osgViewer/Viewer>
  
- namespace
- {
++#include <components/shader/shaderconverter.hpp>
+ #include <components/debug/debuglog.hpp>
+ #include <components/diagnostics/identity.hpp>
+ #include <components/files/conversion.hpp>
 @@ -45,6 +46,17 @@ namespace
          throw std::runtime_error("unrecognized shader template name: " + templateName);
      }

@@ -1,0 +1,391 @@
+diff --git a/apps/openmw/mwrender/renderingmanager.cpp b/apps/openmw/mwrender/renderingmanager.cpp
+index 0865295cc3..a544f0fd0d 100644
+--- a/apps/openmw/mwrender/renderingmanager.cpp
++++ b/apps/openmw/mwrender/renderingmanager.cpp
+@@ -72,6 +72,9 @@
+ #include <components/detournavigator/navigator.hpp>
+ #include <components/detournavigator/navmeshcacheitem.hpp>
+ 
++#include <components/sceneutil/clipplane.hpp>
++#include <components/sceneutil/glextensions.hpp>
++
+ #include "../mwworld/cellstore.hpp"
+ #include "../mwworld/class.hpp"
+ #include "../mwworld/esmstore.hpp"
+@@ -438,6 +441,7 @@ namespace MWRender
+         // Puddles ring like the water.
+         globalDefines["rainRippleDetail"] = std::to_string(Settings::effectiveWeather().mRainRippleDetail);
+         globalDefines["particlePointLighting"] = Settings::shaders().mParticlePointLighting ? "1" : "0";
++        globalDefines["clipDistance"] = SceneUtil::useFixedFunctionClipPlanes() ? "0" : "1";
+ 
+         for (auto itr = lightDefines.begin(); itr != lightDefines.end(); itr++)
+             globalDefines[itr->first] = itr->second;
+@@ -603,6 +607,9 @@ namespace MWRender
+ 
+         SceneUtil::initTexMatForStateSet(*mViewer->getSceneData()->getOrCreateStateSet());
+ 
++        for (unsigned int i = 0; i < SceneUtil::NumClipPlanes; ++i)
++            SceneUtil::setClipPlaneMode(*mViewer->getSceneData()->getOrCreateStateSet(), i, osg::StateAttribute::OFF);
++
+         mRootNode->getOrCreateStateSet()->setMode(
+             GL_LIGHTING, osg::StateAttribute::OFF | osg::StateAttribute::PROTECTED | osg::StateAttribute::OVERRIDE);
+ 
+diff --git a/apps/openmw/mwrender/sky.cpp b/apps/openmw/mwrender/sky.cpp
+index 08d964bbb9b14fc25828945b9518f46e26c1e9ab..840bb31f799e7366eeaee659673479ff368ac917 100644
+--- a/apps/openmw/mwrender/sky.cpp
++++ b/apps/openmw/mwrender/sky.cpp
+@@ -11,6 +11,7 @@
+ 
+ #include <components/settings/values.hpp>
+ 
++#include <components/sceneutil/clipplane.hpp>
+ #include <components/sceneutil/controller.hpp>
+ #include <components/sceneutil/depth.hpp>
+ #include <components/sceneutil/material.hpp>
+@@ -275,7 +276,7 @@ namespace MWRender
+         // render before the world is rendered
+         mEarlyRenderBinRoot->getOrCreateStateSet()->setRenderBinDetails(RenderBin_Sky, "RenderBin");
+         // Prevent unwanted clipping by water reflection camera's clipping plane
+-        mEarlyRenderBinRoot->getOrCreateStateSet()->setMode(GL_CLIP_PLANE0, osg::StateAttribute::OFF);
++        SceneUtil::setClipPlaneMode(*mEarlyRenderBinRoot->getOrCreateStateSet(), 0, osg::StateAttribute::OFF);
+ 
+         if (enableSkyRTT)
+         {
+diff --git a/apps/openmw/mwrender/water.cpp b/apps/openmw/mwrender/water.cpp
+index 86cc74339ae88fb10c93fdb6f2b23e9ec9129dd1..b8889d71e94b4d69cd4945ba9e0ff9bffefef96a 100644
+--- a/apps/openmw/mwrender/water.cpp
++++ b/apps/openmw/mwrender/water.cpp
+@@ -18,8 +18,10 @@
+ #include <components/resource/resourcesystem.hpp>
+ #include <components/resource/scenemanager.hpp>
+ 
++#include <components/sceneutil/clipplane.hpp>
+ #include <components/sceneutil/depth.hpp>
+ #include <components/sceneutil/fog.hpp>
++#include <components/sceneutil/glextensions.hpp>
+ #include <components/sceneutil/material.hpp>
+ #include <components/sceneutil/rtt.hpp>
+ #include <components/sceneutil/shadow.hpp>
+@@ -60,8 +62,9 @@ namespace MWRender
+         {
+         public:
+             /// @param cullPlane The culling plane (in world space).
+-            PlaneCullCallback(const osg::Plane* cullPlane)
++            PlaneCullCallback(const osg::Plane* cullPlane, bool useFixedFunctionClipPlanes)
+                 : mCullPlane(cullPlane)
++                , mUseFixedFunctionClipPlanes(useFixedFunctionClipPlanes)
+             {
+             }
+ 
+@@ -79,14 +82,29 @@ namespace MWRender
+ 
+                 cv->getProjectionCullingStack().back().getFrustum().add(plane);
+ 
++                osg::ref_ptr<osg::StateSet> stateset;
++
++                if (!mUseFixedFunctionClipPlanes)
++                {
++                    stateset = new osg::StateSet;
++                    SceneUtil::updateClipPlane(*stateset, 0, plane.asVec4());
++                }
++
++                if (stateset)
++                    cv->pushStateSet(stateset);
++
+                 traverse(node, cv);
+ 
++                if (stateset)
++                    cv->popStateSet();
++
+                 // undo
+                 cv->getProjectionCullingStack().back().getFrustum().set(origPlaneList);
+             }
+ 
+         private:
+             const osg::Plane* mCullPlane;
++            const bool mUseFixedFunctionClipPlanes;
+         };
+ 
+         class FlipCallback : public SceneUtil::NodeCallback<FlipCallback, osg::Node*, osgUtil::CullVisitor*>
+@@ -134,7 +152,7 @@ namespace MWRender
+     public:
+         ClipCullNode()
+         {
+-            addCullCallback(new PlaneCullCallback(&mPlane));
++            addCullCallback(new PlaneCullCallback(&mPlane, mUseFixedFunctionClipPlanes));
+ 
+             mClipNodeTransform = new osg::Group;
+             mClipNodeTransform->addCullCallback(new FlipCallback(&mPlane));
+@@ -152,13 +170,21 @@ namespace MWRender
+             mPlane = plane;
+ 
+             mClipNode->getClipPlaneList().clear();
+-            mClipNode->addClipPlane(
+-                new osg::ClipPlane(0, osg::Plane(mPlane.getNormal(), 0))); // mPlane.d() applied in FlipCallback
+-            mClipNode->setStateSetModes(*getOrCreateStateSet(), osg::StateAttribute::ON);
++
++            if (mUseFixedFunctionClipPlanes)
++            {
++                mClipNode->addClipPlane(
++                    new osg::ClipPlane(0, osg::Plane(mPlane.getNormal(), 0))); // mPlane.d() applied in FlipCallback
++                mClipNode->setStateSetModes(*getOrCreateStateSet(), osg::StateAttribute::ON);
++            }
++            else
++                SceneUtil::setClipPlaneMode(*getOrCreateStateSet(), 0, osg::StateAttribute::ON);
++
+             mClipNode->setCullingActive(false);
+         }
+ 
+     private:
++        const bool mUseFixedFunctionClipPlanes = SceneUtil::useFixedFunctionClipPlanes();
+         osg::ref_ptr<osg::Group> mClipNodeTransform;
+         osg::ref_ptr<osg::ClipNode> mClipNode;
+ 
+diff --git a/apps/openmw/mwrender/waterawaretransparentbin.cpp b/apps/openmw/mwrender/waterawaretransparentbin.cpp
+index 645f0142cfcaee9c6d6b7a74cb322673c92715c4..61cd90cfc89aaec7f5ab56c3acef3074b9202cfa 100644
+--- a/apps/openmw/mwrender/waterawaretransparentbin.cpp
++++ b/apps/openmw/mwrender/waterawaretransparentbin.cpp
+@@ -9,6 +9,9 @@
+ #include <osgUtil/StateGraph>
+ 
+ #include <components/misc/constants.hpp>
++#include <components/sceneutil/clipplane.hpp>
++#include <components/sceneutil/glextensions.hpp>
++#include <components/settings/values.hpp>
+ 
+ #include "opaqueblit.hpp"
+ #include "water.hpp"
+@@ -35,6 +38,7 @@ namespace MWRender
+         , mOpaqueColorResolve(opaqueColorResolve)
+         , mClipStateSet(new osg::StateSet)
+         , mWater(water)
++        , mUseFixedFunctionClipPlanes(SceneUtil::useFixedFunctionClipPlanes())
+     {
+     }
+ 
+@@ -43,6 +47,7 @@ namespace MWRender
+         , mOpaqueColorResolve(rhs.mOpaqueColorResolve)
+         , mClipStateSet(new osg::StateSet)
+         , mWater(rhs.mWater)
++        , mUseFixedFunctionClipPlanes(rhs.mUseFixedFunctionClipPlanes)
+     {
+     }
+ 
+@@ -152,8 +157,18 @@ namespace MWRender
+ 
+         osg::Plane viewPlane = worldPlane;
+         viewPlane.transformProvidingInverse(inverseView);
+-        mClipStateSet->setAttributeAndModes(new osg::ClipPlane(1, viewPlane),
+-            osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
++
++        if (mUseFixedFunctionClipPlanes)
++        {
++            mClipStateSet->setAttributeAndModes(new osg::ClipPlane(1, viewPlane),
++                osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
++        }
++        else
++        {
++            SceneUtil::setClipPlaneMode(*mClipStateSet, 1,
++                osg::StateAttribute::ON | osg::StateAttribute::OVERRIDE | osg::StateAttribute::PROTECTED);
++            SceneUtil::updateClipPlane(*mClipStateSet, 1, viewPlane.asVec4());
++        }
+ 
+         if (previous)
+             osgUtil::StateGraph::moveToRootStateGraph(state, previous->_parent->_parent);
+diff --git a/apps/openmw/mwrender/waterawaretransparentbin.hpp b/apps/openmw/mwrender/waterawaretransparentbin.hpp
+index 89f422e6a38d468e7034396a23cb7206686b2b53..88012e807445e6ada1edb971fa68c0c4bfe73bec 100644
+--- a/apps/openmw/mwrender/waterawaretransparentbin.hpp
++++ b/apps/openmw/mwrender/waterawaretransparentbin.hpp
+@@ -44,6 +44,7 @@ namespace MWRender
+         osg::ref_ptr<osg::StateSet> mClipStateSet;
+         bool mCameraUnderwater = false;
+         const Water* mWater;
++        const bool mUseFixedFunctionClipPlanes;
+     };
+ }
+ 
+diff --git a/components/CMakeLists.txt b/components/CMakeLists.txt
+index 39301d52e8..add312eaa0 100644
+--- a/components/CMakeLists.txt
++++ b/components/CMakeLists.txt
+@@ -163,7 +163,7 @@ add_component_dir (sceneutil
+     lightmanager lightutil positionattitudetransform workqueue pathgridutil waterutil writescene serialize optimizer
+     detourdebugdraw navmesh agentpath animblendrules shadow mwshadowtechnique localshadows worldshadows farshadow recastmesh shadowsbin osgacontroller rtt
+     screencapture depth color riggeometryosgaextension extradata unrefqueue lightcommon clearcolor
+-    cullsafeboundsvisitor keyframe nodecallback templateref textkeymap userdata glextensions fog texmat material particlesystem clusteredlighting
++    cullsafeboundsvisitor keyframe nodecallback templateref textkeymap userdata glextensions fog texmat material clipplane particlesystem clusteredlighting
+     )
+ 
+ add_component_dir (nif
+diff --git a/components/sceneutil/clipplane.cpp b/components/sceneutil/clipplane.cpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..17e1708576e63fe5325f4d07359ded3505cfdd41
+--- /dev/null
++++ b/components/sceneutil/clipplane.cpp
+@@ -0,0 +1,41 @@
++#include "clipplane.hpp"
++
++#include <format>
++
++#include <osg/StateSet>
++
++namespace
++{
++    std::string getClipPlaneUniform(unsigned int index)
++    {
++        return std::format("clipPlane{}", index);
++    }
++}
++
++namespace SceneUtil
++{
++    void updateClipPlane(osg::StateSet& stateset, unsigned int index, const osg::Vec4f& plane)
++    {
++        stateset.getOrCreateUniform(getClipPlaneUniform(index), osg::Uniform::FLOAT_VEC4)->set(plane);
++    }
++
++    void setClipPlaneMode(osg::StateSet& stateset, unsigned int index, osg::StateAttribute::OverrideValue value)
++    {
++        if (index >= NumClipPlanes)
++            throw std::out_of_range(std::format("Clip plane #{} exceeds maximum of {}", index, NumClipPlanes));
++
++        // GL_CLIP_DISTANCEi and GL_CLIP_PLANEi are aliases. This means we can set the same modes for FFP clip
++        // planes and forward compatible vertex clipping
++        stateset.setMode(GL_CLIP_PLANE0 + index, value);
++
++#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
++        // There is a driver bug with Adreno where writing to gl_ClipDistance does not respect the current modes.
++        // This may or may not effect other drivers, for now we apply this blanket fix when OSG is compiled with GLES.
++        // Here we control clip plane writes via uniforms.
++        osg::Uniform* uniform
++            = stateset.getOrCreateUniform(std::format("clipPlaneEnabled{}", index), osg::Uniform::BOOL);
++        uniform->set((value & osg::StateAttribute::ON) != 0);
++        stateset.addUniform(uniform, value | osg::StateAttribute::ON);
++#endif
++    }
++}
+diff --git a/components/sceneutil/clipplane.hpp b/components/sceneutil/clipplane.hpp
+new file mode 100644
+index 0000000000000000000000000000000000000000..13fe2c87af6ba485f52e396ffd196a5dd24110ad
+--- /dev/null
++++ b/components/sceneutil/clipplane.hpp
+@@ -0,0 +1,22 @@
++#ifndef OPENMW_COMPONENTS_SCENEUTIL_CLIPPLANE_H
++#define OPENMW_COMPONENTS_SCENEUTIL_CLIPPLANE_H
++
++#include <osg/StateAttribute>
++
++namespace osg
++{
++    class StateSet;
++}
++
++namespace SceneUtil
++{
++    // This number may be increased, but for now OpenMW only relies on a single clip plane
++    constexpr unsigned int NumClipPlanes = 2;
++
++    void updateClipPlane(osg::StateSet& stateset, unsigned int index, const osg::Vec4f& plane);
++
++    void setClipPlaneMode(osg::StateSet& stateset, unsigned int index,
++        osg::StateAttribute::OverrideValue value = osg::StateAttribute::ON);
++}
++
++#endif
+diff --git a/components/sceneutil/glextensions.cpp b/components/sceneutil/glextensions.cpp
+index 3a14dab8edc1e87e6ac011e6912b516d7baca8dc..3852fbe460c5165d3ce5b110bb98d549f372fff7 100644
+--- a/components/sceneutil/glextensions.cpp
++++ b/components/sceneutil/glextensions.cpp
+@@ -47,6 +47,22 @@ namespace SceneUtil
+         return **sGLExtensions.begin();
+     }
+ 
++    bool supportsNativeClipDistance()
++    {
++#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
++        return osg::isGLExtensionSupported(getGLExtensions().contextID, "GL_EXT_clip_cull_distance");
++#endif
++        return getGLExtensions().glVersion >= 3.0f && getGLExtensions().glslLanguageVersion >= 3.3f;
++    }
++
++    bool useFixedFunctionClipPlanes()
++    {
++#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
++        return false;
++#endif
++        return !supportsNativeClipDistance();
++    }
++
+     GetGLExtensionsOperation::GetGLExtensionsOperation()
+         : GraphicsOperation("GetGLExtensionsOperation", false)
+     {
+diff --git a/components/sceneutil/glextensions.hpp b/components/sceneutil/glextensions.hpp
+index 05e7f715c158ba212aa17b378e2472be5561a4a4..308a7a662e8a918e3da75cfb24c267136ac17926 100644
+--- a/components/sceneutil/glextensions.hpp
++++ b/components/sceneutil/glextensions.hpp
+@@ -8,6 +8,8 @@ namespace SceneUtil
+ {
+     bool glExtensionsReady();
+     osg::GLExtensions& getGLExtensions();
++    bool supportsNativeClipDistance();
++    bool useFixedFunctionClipPlanes();
+ 
+     class GetGLExtensionsOperation : public osg::GraphicsOperation
+     {
+diff --git a/components/shader/shadermanager.cpp b/components/shader/shadermanager.cpp
+index 37fec67eff..764c2636f1 100644
+--- a/components/shader/shadermanager.cpp
++++ b/components/shader/shadermanager.cpp
+@@ -33,6 +33,9 @@
+ #include <components/settings/values.hpp>
+ #include <components/settings/weather.hpp>
+ 
++#include <components/sceneutil/clipplane.hpp>
++#include <components/sceneutil/glextensions.hpp>
++
+ namespace
+ {
+     /// Linked module k owns #line files from k * 1000.
+@@ -1639,6 +1642,14 @@ namespace Shader
+ 
+     ShaderManager::DefineMap getDefaultDefines()
+     {
++        std::string clipPlaneList = "";
++        for (unsigned int i = 0; i < SceneUtil::NumClipPlanes; ++i)
++            clipPlaneList += std::to_string(i) + ((i + 1) < SceneUtil::NumClipPlanes ? "," : "");
++
++#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
++        const bool useClipDistanceFallback = !SceneUtil::supportsNativeClipDistance();
++#endif
++
+         ShaderManager::DefineMap defines = {
+             { "forcePPL", "0" },
+             { "localShadowSlots", std::to_string(Vulkan::Bindings::sShadowSlots) },
+@@ -1660,6 +1671,13 @@ namespace Shader
+             { "numViews", "1" },
+             { "particle", "0" },
+             { "particlePointLighting", "1" },
++            { "clipDistance", "0" },
++            { "clipPlaneList", clipPlaneList },
++#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
++            { "useClipDistanceFallback", useClipDistanceFallback ? "1" : "0" },
++#else
++            { "useClipDistanceFallback", "0" },
++#endif
+             { "gpuInstanced", "0" },
+             { "gpuMaterial", "0" },
+             { "gpuMaterialArray", "0" },
+@@ -1660,6 +1668,13 @@ namespace Shader
+             { "numViews", "1" },
+             { "particle", "0" },
+             { "particlePointLighting", "1" },
++            { "clipDistance", "0" },
++            { "clipPlaneList", clipPlaneList },
++#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
++            { "useClipDistanceFallback", useClipDistanceFallback ? "1" : "0" },
++#else
++            { "useClipDistanceFallback", "0" },
++#endif
+             { "gpuInstanced", "0" },
+             { "gpuMaterial", "0" },
+             { "gpuMaterialArray", "0" },

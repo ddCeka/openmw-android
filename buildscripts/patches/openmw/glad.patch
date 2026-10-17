@@ -1,30 +1,67 @@
+diff --git a/apps/openmw/engine.cpp b/apps/openmw/engine.cpp
+index 15690a1da3..bf3f38d86b 100644
+--- a/apps/openmw/engine.cpp
++++ b/apps/openmw/engine.cpp
+@@ -4,6 +4,7 @@
+ #include <chrono>
+ #include <future>
+ #include <system_error>
++#include <dlfcn.h>
+ 
+ #include <osg/GLExtensions>
+ #include <osg/GLObjects>
+@@ -885,9 +886,29 @@ void OMW::Engine::createWindow(bool hidden)
+         0, 0, graphicsWindow->getTraits()->width, graphicsWindow->getTraits()->height);
+ }
+ 
++
++GLADapiproc loadSystemGles(const char* name) 
++{
++    static void* lib = dlopen((getenv("OSG_USE_ANGLE") != nullptr) ? "libGLESv2_angle.so" : "libGLESv3.so", RTLD_NOW); 
++    return lib != nullptr ? reinterpret_cast<GLADapiproc>(dlsym(lib, name)) : nullptr;
++}
++
++void loadGladWithoutContext()
++{
++    static bool done = false;
++    if (!done)
++    {
++        done = true;
++        gladLoadGLES2(loadSystemGles);
++    }
++}
++
++
+ bool OMW::Engine::createVulkanWindow(std::uint32_t flags, int posX, int posY, Settings::RendererEntry entry)
+ {
+ #ifdef OPENMW_USE_VULKAN
++    loadGladWithoutContext();
++
+     const int width = Settings::video().mResolutionX;
+     const int height = Settings::video().mResolutionY;
+     const bool ownsWindow = mWindow == nullptr;
 diff --git a/components/sdlutil/sdlgraphicswindow.cpp b/components/sdlutil/sdlgraphicswindow.cpp
-index 9ff0545930..0219e55953 100644
+index 4abe01bdea..f0bf5eb5b6 100644
 --- a/components/sdlutil/sdlgraphicswindow.cpp
 +++ b/components/sdlutil/sdlgraphicswindow.cpp
-@@ -1,7 +1,11 @@
-+#include <glad/gles2.h>
-+
- #include "sdlgraphicswindow.hpp"
- 
- #include <SDL_video.h>
- 
-+#include <components/debug/debuglog.hpp>
-+
- #ifdef OPENMW_GL4ES_MANUAL_INIT
+@@ -6,6 +6,9 @@
  #include "gl4esinit.h"
  #endif
-@@ -131,6 +135,14 @@ namespace SDLUtil
+ 
++#include <glad/gles2.h>
++#include <components/debug/debuglog.hpp>
++
+ namespace SDLUtil
+ {
+ 
+@@ -145,6 +148,11 @@ namespace SDLUtil
              return;
          }
  
-+        //int version = gladLoaderLoadGLES2();
 +        int version = gladLoadGLES2((GLADloadfunc)SDL_GL_GetProcAddress);
 +        if (!version) {
 +            Log(Debug::Error) << "Failed to initialize GLAD\n";
 +        }
-+        //else
-+            //Log(Debug::Error) << "Initialized GLAD " << version << "\n";
 +
  #ifdef OPENMW_GL4ES_MANUAL_INIT
          openmw_gl4es_init(mWindow);
