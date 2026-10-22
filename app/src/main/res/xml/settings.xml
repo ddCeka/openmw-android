@@ -117,6 +117,21 @@
             android:summary="Use ANGLE as OpenGL ES driver."
             android:defaultValue="true"/>
 
+        <Preference
+            android:title="@string/pref_custom_driver"
+            android:key="pref_custom_driver"
+            />
+
+        <ListPreference
+            android:key="pref_graphic_backend"
+            android:title="@string/pref_graphic_backend"
+            android:dialogTitle="@string/pref_graphic_backend"
+            android:entries="@array/pref_graphic_backend_entries"
+            android:entryValues="@array/pref_graphic_backend_values"
+            android:defaultValue="@string/pref_graphic_backend_default"
+            android:summary="%s"
+            />
+
     </PreferenceCategory>
 
     <PreferenceCategory android:title="@string/pref_advanced">

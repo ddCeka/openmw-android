@@ -31,8 +31,8 @@ index 39301d52e8..e705940f8f 100644
  
      add_component_dir (vulkan
          vmaimpl instance device devicetable deviceprofile frame pipelinecache bindings descriptors images swapchain
--        breadcrumbs addresstable commands renderpasses blockdecode
-+        breadcrumbs addresstable commands renderpasses blockdecode vulkanmobiledispatch
+-        breadcrumbs addresstable commands renderpasses blockdecode buffers
++        breadcrumbs addresstable commands renderpasses blockdecode buffers vulkanmobiledispatch
          )
  endif()
  

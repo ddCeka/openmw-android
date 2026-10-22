@@ -105,8 +105,19 @@
     <string name="game_files">Game files</string>
 
     <!-- Graphics library -->
-    <string name="pref_graphicsLibrary">Graphics library</string>
-    <string name="pref_graphicsLibrary_default">gles2</string>
+    <string name="pref_graphic_backend">Renderer</string>
+    <string-array name="pref_graphic_backend_entries">
+        <item>Vulkan</item>
+        <item>OpenGL ES</item>
+    </string-array>
+    <string-array name="pref_graphic_backend_values">
+        <item>vulkan 1.4</item>
+        <item>opengl</item>
+    </string-array>
+    <string name="pref_graphic_backend_default">opengl</string>
+
+    <string name="pref_custom_driver">Select Custom Vulkan Driver</string>
+
     <string name="pref_advanced">Advanced</string>
     <string name="pref_graphics">Graphics</string>
     <string name="pref_commandLine">Custom command line arguments</string>
@@ -162,6 +173,8 @@
     <string name="action_theme_dark">Dark</string>
 
     <string name="action_generate_navmesh">Generate NavMesh cache</string>
+
+    <string name="action_clean_vulkan_shader_cache">Clear shader cache</string>
 
     <string name="action_add_mod">Add Mod Folder</string>
     <string name="action_mods_preset">Content Lists</string>

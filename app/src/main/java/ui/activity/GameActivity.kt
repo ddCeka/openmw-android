@@ -316,8 +316,6 @@ class GameActivity : SDLActivity() {
         System.loadLibrary("openal")
         System.loadLibrary("SDL2")
 
-        //System.loadLibrary("libadrenotools")
-
         try {
             Os.setenv("OPENMW_GLES_VERSION", "32", true)
             Os.setenv("LIBGL_ES", "3", true)
@@ -341,7 +339,12 @@ class GameActivity : SDLActivity() {
         //Os.setenv("OSG_GL_TEXTURE_STORAGE", "OFF", true)
         Os.setenv("OSG_TEXT_SHADER_TECHNIQUE", "ALL", true)
 
-        val envline: String = PreferenceManager.getDefaultSharedPreferences(this).getString("envLine", "").toString()
+        Os.setenv("LIB_DIR", applicationInfo.nativeLibraryDir, true)
+        Os.setenv("TMP_DIR", getCacheDir().absolutePath, true)
+        Os.setenv("FILES_DIR", getFilesDir().absolutePath + "/drivers", true)
+        Os.setenv("DRIVER_NAME", prefs!!.getString("driverLibName", "System").toString(), true)
+
+        val envline: String = prefs!!.getString("envLine", "").toString()
         if (envline.length > 0) {
             val envs: List<String> = envline.split(" ", "\n")
             var i = 0
@@ -443,9 +446,6 @@ class GameActivity : SDLActivity() {
 
     public override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-Os.setenv("LIB_DIR", applicationInfo.nativeLibraryDir, true)
-Os.setenv("TMP_DIR", getCacheDir().absolutePath, true)
 
         val displayInCutoutArea = PreferenceManager.getDefaultSharedPreferences(this).getBoolean("pref_display_cutout_area", true)
         if (displayInCutoutArea || android.os.Build.VERSION.SDK_INT < 29) {

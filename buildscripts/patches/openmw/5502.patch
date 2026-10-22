@@ -293,17 +293,18 @@ index 0000000000000000000000000000000000000000..13fe2c87af6ba485f52e396ffd196a5d
 +
 +#endif
 diff --git a/components/sceneutil/glextensions.cpp b/components/sceneutil/glextensions.cpp
-index 3a14dab8edc1e87e6ac011e6912b516d7baca8dc..3852fbe460c5165d3ce5b110bb98d549f372fff7 100644
+index 752eb5ab81..6d0fea67dd 100644
 --- a/components/sceneutil/glextensions.cpp
 +++ b/components/sceneutil/glextensions.cpp
-@@ -47,6 +47,22 @@ namespace SceneUtil
-         return **sGLExtensions.begin();
+@@ -52,6 +52,28 @@ namespace SceneUtil
+         return *sActiveExtensions;
      }
  
 +    bool supportsNativeClipDistance()
 +    {
 +#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
-+        return osg::isGLExtensionSupported(getGLExtensions().contextID, "GL_EXT_clip_cull_distance");
++        const osg::GLExtensions* exts = glExtensionsReady() ? &getGLExtensions() : nullptr;
++        return exts != nullptr && osg::isGLExtensionSupported(getGLExtensions().contextID, "GL_EXT_clip_cull_distance");
 +#endif
 +        return getGLExtensions().glVersion >= 3.0f && getGLExtensions().glslLanguageVersion >= 3.3f;
 +    }
@@ -311,14 +312,19 @@ index 3a14dab8edc1e87e6ac011e6912b516d7baca8dc..3852fbe460c5165d3ce5b110bb98d549
 +    bool useFixedFunctionClipPlanes()
 +    {
 +#if defined(OSG_GLES2_AVAILABLE) || defined(OSG_GLES3_AVAILABLE)
-+        return false;
++        const osg::GLExtensions* exts = glExtensionsReady() ? &getGLExtensions() : nullptr;
++        if (exts == nullptr)
++            return true;
++        else
++            return false;
 +#endif
 +        return !supportsNativeClipDistance();
 +    }
 +
-     GetGLExtensionsOperation::GetGLExtensionsOperation()
-         : GraphicsOperation("GetGLExtensionsOperation", false)
++
+     void setGLExtensions(osg::GLExtensions* extensions)
      {
+         if (extensions != nullptr)
 diff --git a/components/sceneutil/glextensions.hpp b/components/sceneutil/glextensions.hpp
 index 05e7f715c158ba212aa17b378e2472be5561a4a4..308a7a662e8a918e3da75cfb24c267136ac17926 100644
 --- a/components/sceneutil/glextensions.hpp

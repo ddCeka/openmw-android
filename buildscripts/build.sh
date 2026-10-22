@@ -11,9 +11,9 @@ DEPLOY_RESOURCES="true"
 LTO="false"
 BUILD_TYPE="release"
 GH_ACTIONS_BUILD="false"
-CFLAGS="-fPIC"
-CXXFLAGS="-fPIC -frtti -fexceptions"
-LDFLAGS="-Wl,--undefined-version"
+CFLAGS="-w -fPIC"
+CXXFLAGS="-w -fPIC -frtti -fexceptions"
+LDFLAGS="-w -Wl,--undefined-version"
 
 usage() {
 	echo "Usage: ./build.sh [--help] [--asan] [--arch arch] [--debug|--release]"
@@ -196,7 +196,6 @@ cp tool/libGLESv2_angle.so ../app/src/main/jniLibs/$ABI/
 cp tool/libEGL_angle.so ../app/src/main/jniLibs/$ABI/
 cp tool/libGLESv1_CM_angle.so ../app/src/main/jniLibs/$ABI/
 cp tool/libfeature_support_angle.so ../app/src/main/jniLibs/$ABI/
-cp tool/libvulkan_freedreno.so ../app/src/main/jniLibs/$ABI/
 
 # copy over libs we compiled
 cp prefix/$ARCH/lib/{libopenal,libSDL2,libcollada-dom2.5-dp,libkram,libglad,libfile_redirect_hook,libgsl_alloc_hook,libhook_impl,libmain_hook}.so ../app/src/main/jniLibs/$ABI/
@@ -214,6 +213,9 @@ if [[ $DEPLOY_RESOURCES = "true" ]]; then
 
 	# resources
 	cp -r "$SRC/resources" "$DST"
+
+        # drivers
+        cp -r tool/drivers ../app/src/main/assets/
 
 	# global config
 	mkdir -p "$DST/openmw/"

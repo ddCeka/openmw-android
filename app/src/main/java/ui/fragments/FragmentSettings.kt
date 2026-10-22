@@ -46,6 +46,7 @@ import ui.activity.SettingsActivity
 import utils.MyApp
 import java.util.*
 import java.io.File
+import java.util.zip.ZipFile
 import constants.Constants
 
 class FragmentSettings : PreferenceFragment(), OnSharedPreferenceChangeListener {
@@ -106,6 +107,59 @@ class FragmentSettings : PreferenceFragment(), OnSharedPreferenceChangeListener 
 
                 chooser.setOnSelectListener { path -> setupData(path) }
             }
+            true
+        }
+
+        findPreference("pref_custom_driver").setOnPreferenceClickListener {
+            val sharedPref = preferenceScreen.sharedPreferences
+            var packages = arrayOf("System")
+            val currentDriver = sharedPref.getString("currentDriver", "System")!!
+            var currentDriverLocation = 0
+            var counter = 1
+
+            File(Constants.USER_FILE_STORAGE + "/drivers").listFiles().forEach {  
+                if (it.isFile() && it.extension == "zip") {
+                    packages += it.getName()
+                    if (it.getName() == currentDriver) currentDriverLocation = counter
+                    counter += 1
+                }
+            }
+
+
+            AlertDialog.Builder(activity!!)
+            .setTitle("Choose custom vulkan driver")
+            .setSingleChoiceItems(packages, currentDriverLocation) { dialog, which ->
+                val path = Constants.USER_FILE_STORAGE + "/drivers/" + packages[which]
+
+                val unpackDir = Constants.RESOURCES.replace("resources", "drivers/")
+                File(unpackDir).mkdirs()
+
+                if (packages[which] != "System") ZipFile(path).use { zip ->
+                    zip.entries().asSequence().forEach { entry ->
+                        zip.getInputStream(entry).use { input ->
+                            File(unpackDir + entry.name).outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    }
+                }
+
+                var lib = File(unpackDir + "meta.json").readText().substringAfter('"' + "libraryName" + '"' + ": " + '"').substringBefore('"')
+                if (packages[which] == "System") lib = "System"
+
+                with(sharedPref.edit()) {
+                    putString("currentDriver", packages[which])
+                    putString("driverLibName", lib)
+                    apply()
+                }
+
+                updatePreference(findPreference("pref_custom_driver"), "pref_custom_driver")
+
+                dialog.dismiss()
+            }
+            .setPositiveButton("Cancel") { dialog, which -> }
+            .show()
+
             true
         }
 
@@ -199,6 +253,10 @@ class FragmentSettings : PreferenceFragment(), OnSharedPreferenceChangeListener 
         // Show selected value as a summary for game_files
         if (key == "game_files") {
             preference.summary = preference.sharedPreferences.getString("game_files", "")
+        }
+
+        if (key == "pref_custom_driver") {
+            preference.summary = preference.sharedPreferences.getString("currentDriver", "System")
         }
     }
 }

@@ -332,6 +332,7 @@ class MainActivity : AppCompatActivity() {
         val assetCopier = CopyFilesFromAssets(this)
         assetCopier.copy("libopenmw/resources", Constants.RESOURCES)
         assetCopier.copy("libopenmw/openmw", Constants.GLOBAL_CONFIG)
+        assetCopier.copy("drivers", Constants.RESOURCES.replace("resources", "drivers"))
 
         // set version stamp
         File(Constants.VERSION_STAMP).writeText(BuildConfig.RANDOMIZER.toString())
@@ -366,6 +367,11 @@ class MainActivity : AppCompatActivity() {
 
         var src = File(Constants.RESOURCES)
         var dst = File(Constants.USER_FILE_STORAGE + "/resources/")
+        dst.mkdirs()
+        src.copyRecursively(dst, true) 
+
+        src = File(Constants.RESOURCES.replace("resources", "drivers"))
+        dst = File(Constants.USER_FILE_STORAGE + "/drivers/")
         dst.mkdirs()
         src.copyRecursively(dst, true) 
     }
@@ -559,6 +565,9 @@ class MainActivity : AppCompatActivity() {
 	writeSetting("Navigator", "async nav mesh updater threads", prefs.getString("gs_navmesh_threads", "1").toString())
 	writeSetting("Physics", "async num threads", prefs.getString("gs_physics_threads", "1").toString())
 	writeSetting("Cells", "preload num threads", prefs.getString("gs_preload_threads", "1").toString())
+
+        // Renderer
+	writeSetting("Video", "renderer", prefs.getString("pref_graphic_backend", "opengl").toString())
     }
 
     private fun startGame() {
@@ -775,16 +784,22 @@ class MainActivity : AppCompatActivity() {
                 true
             }
 
-            R.id.action_about -> {
-                val text = assets.open("libopenmw/3rdparty-licenses.txt")
-                    .bufferedReader()
-                    .use { it.readText() }
+            R.id.action_generate_navmesh -> {
+                Os.setenv("OPENMW_GENERATE_NAVMESH_CACHE", "1", true)
+                checkStartGame()
+                true
+            }
 
+            R.id.action_clean_vulkan_shader_cache -> {
                 AlertDialog.Builder(this)
-                    .setTitle(getString(R.string.about_title))
-                    .setMessage(text)
+                    .setTitle("Confirmation")
+                    .setMessage("Are you sure you want to clean shader cache?")
+                    .setPositiveButton("Yes") { _, _ ->
+                        deleteRecursive(File(getCacheDir().absolutePath + "/spirv/"))
+                        Toast.makeText(this, "Shader cache was deleted.", Toast.LENGTH_SHORT).show()
+                    }
+                    .setNegativeButton("No", null)
                     .show()
-
                 true
             }
 

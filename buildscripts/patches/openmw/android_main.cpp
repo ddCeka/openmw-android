@@ -44,11 +44,12 @@ bool initVulkanDriver()
 
     const std::string libDir = withTrailingSlash(getenv("LIB_DIR"));
     const std::string tmpDir = withTrailingSlash(getenv("TMP_DIR"));
-    const std::string name = "libvulkan_freedreno.so";
+    const std::string driverDir = withTrailingSlash(getenv("FILES_DIR"));
+    const std::string name = getenv("DRIVER_NAME");
 
     g_vulkanHandle = adrenotools_open_libvulkan(
         RTLD_NOW, ADRENOTOOLS_DRIVER_CUSTOM, tmpDir.c_str(), libDir.c_str(),
-        libDir.c_str(), name.c_str(), nullptr, nullptr);
+        driverDir.c_str(), name.c_str(), nullptr, nullptr);
 
     if (!g_vulkanHandle)
         g_vulkanHandle = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
@@ -119,27 +120,25 @@ public:
 };
 
 extern "C" void Java_org_libsdl_app_SDLActivity_omwSurfaceDestroyed(JNIEnv *env, jclass cls, jobject obj) {
-    if (!g_viewer)
-        return;
-
-    osg::ref_ptr<CtxReleaseOperation> op = new CtxReleaseOperation();
-    ctx = g_viewer->getCamera()->getGraphicsContext();
-    ctx->add(op);
-
-    auto win = (MWBase::WindowManager *)MWBase::Environment::get().getWindowManager();
-    if (win)
-        win->windowVisibilityChange(false);
+  try {
+    osg::GraphicsContext::GraphicsContexts contexts = osg::GraphicsContext::getRegisteredGraphicsContexts(0);
+    if (!contexts.empty() && contexts[0])
+    {
+      osg::ref_ptr<CtxReleaseOperation> op = new CtxReleaseOperation();
+      ctx = contexts[0];
+      ctx->add(op);
+    }
+  } catch (...) {}
 }
 
 extern "C" void Java_org_libsdl_app_SDLActivity_omwSurfaceRecreated(JNIEnv *env, jclass cls, jobject obj) {
-    if (!g_viewer)
-        return;
-
-    osg::ref_ptr<CtxAcquireOperation> op = new CtxAcquireOperation();
-    ctx = g_viewer->getCamera()->getGraphicsContext();
-    ctx->add(op);
-
-    auto win = (MWBase::WindowManager *)MWBase::Environment::get().getWindowManager();
-    if (win)
-        win->windowVisibilityChange(true);
+  try {
+    osg::GraphicsContext::GraphicsContexts contexts = osg::GraphicsContext::getRegisteredGraphicsContexts(0);
+    if (!contexts.empty() && contexts[0])
+    {
+      osg::ref_ptr<CtxAcquireOperation> op = new CtxAcquireOperation();
+      ctx = contexts[0];
+      ctx->add(op);
+    }
+  } catch (...) {}
 }
