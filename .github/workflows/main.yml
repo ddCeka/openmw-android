@@ -1,6 +1,11 @@
 name: CI
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -14,38 +19,55 @@ jobs:
       CMAKE_VERSION: 3.29.2
 
     steps:
-    - uses: actions/checkout@v3
+      - uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt install software-properties-common
-        sudo apt-get install -y build-essential gcc-multilib unzip pkg-config p7zip-full ccache python3
-        cd /home/runner/
-        wget https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-Linux-x86_64.tar.gz
-        tar xvf cmake-$CMAKE_VERSION-Linux-x86_64.tar.gz
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt install software-properties-common
+          sudo apt-get install -y build-essential gcc-multilib unzip pkg-config p7zip-full ccache python3
+          cd /home/runner/
+          wget https://github.com/Kitware/CMake/releases/download/v$CMAKE_VERSION/cmake-$CMAKE_VERSION-Linux-x86_64.tar.gz
+          tar xvf cmake-$CMAKE_VERSION-Linux-x86_64.tar.gz
 
-    - name: Build native libraries
-      run: |
-        export PATH=/home/runner/cmake-$CMAKE_VERSION-Linux-x86_64/bin/:$PATH
-        cd buildscripts
-        ./build.sh --arch ${{ matrix.arch }} --gh_actions_build
+      - name: Build native libraries
+        run: |
+          export PATH=/home/runner/cmake-$CMAKE_VERSION-Linux-x86_64/bin/:$PATH
+          cd buildscripts
+          ./build.sh --arch ${{ matrix.arch }} --gh_actions_build
 
-    - name: Build the APK
-      run: |
-        ARCH=${{ matrix.arch }} source buildscripts/include/version.sh
-        sed -i "s/abiFilters.*/abiFilters '$ABI'/" app/build.gradle
-        export ANDROID_NDK_HOME=$(pwd)/buildscripts/toolchain/ndk/
-        ./gradlew assembleNightlyDebug
+      - name: Build the APK
+        run: |
+          ARCH=${{ matrix.arch }} source buildscripts/include/version.sh
+          sed -i "s/abiFilters.*/abiFilters '$ABI'/" app/build.gradle
+          export ANDROID_NDK_HOME=$(pwd)/buildscripts/toolchain/ndk/
+          ./gradlew assembleNightlyDebug
 
-    - name: Collect outputs
-      id: getfilename
-      run: |
-        mv app/build/outputs/apk/nightly/debug/omw_debug_*.apk omw-debug-$(git rev-parse --short "$GITHUB_SHA")-${{ matrix.arch }}.apk
-        echo "apk_file=$(ls omw-debug-*.apk | sed 's/\(.*\)\..*/\1/')" >> $GITHUB_ENV
-        
-    - name: Upload the APK
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ env.apk_file }}
-        path: ${{ env.apk_file }}.apk
+      - name: Collect outputs
+        id: getfilename
+        run: |
+          mv app/build/outputs/apk/nightly/debug/omw_debug_*.apk omw-debug-$(git rev-parse --short "$GITHUB_SHA")-${{ matrix.arch }}.apk
+          echo "apk_file=$(ls omw-debug-*.apk | sed 's/\(.*\)\..*/\1/')" >> $GITHUB_ENV
+
+      - name: Upload the APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ env.apk_file }}
+          path: ${{ env.apk_file }}.apk
+
+      - name: Compute tag from commit count
+        id: tag
+        if: github.event_name == 'push'
+        run: |
+          commit_count=$(git rev-list --count HEAD)
+          echo "commit_count=$commit_count" >> $GITHUB_OUTPUT
+          echo "tag_name=$commit_count" >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        if: github.event_name == 'push'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.tag.outputs.tag_name }}
+          name: Release ${{ steps.tag.outputs.tag_name }}
+          files: |
+            ${{ env.apk_file }}.apk
